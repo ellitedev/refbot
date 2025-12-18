@@ -3,6 +3,7 @@
         "formulahendry.code-runner",
         "dbaeumer.vscode-eslint",
         "jasonhaxstuff.discord-js-tools",
-        "darkempire78.discord-tools"
+        "darkempire78.discord-tools",
+        "waderyan.nodejs-extension-pack"
     ]
 }
