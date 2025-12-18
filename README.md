@@ -9,6 +9,8 @@ Then, run `npm i` in the root directory, let npm install dependencies, and you *
 Make sure to create a `.env` file in the root directory, and put this in it:
 ```env
 DISCORD_TOKEN=tokenhere
+CLIENT_ID=discordbotapplicationidhere
+GUILD_ID=serveridhere
 ```
 
 ## TO-DO
