@@ -10,3 +10,12 @@ Make sure to create a `.env` file in the root directory, and put this in it:
 ```env
 DISCORD_TOKEN=tokenhere
 ```
+
+## TO-DO
+In no order:
+- [ ] Manage start.gg matches (report data)
+- [ ] Generate/manage mappools (maybe ask Ricki)
+- [ ] Handle pick/ban cycle
+- [ ] Handle ready checks
+- [ ] Report match information (pick ban cycle, ready status) to SpinPanel
+- [ ] more?
