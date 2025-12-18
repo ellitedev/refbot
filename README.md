@@ -17,5 +17,5 @@ In no order:
 - [ ] Generate/manage mappools (maybe ask Ricki)
 - [ ] Handle pick/ban cycle
 - [ ] Handle ready checks
-- [ ] Report match information (pick ban cycle, ready status) to SpinPanel
+- [ ] Report match information (mappool, pick ban cycle, ready status) through websocket or something?
 - [ ] more?
