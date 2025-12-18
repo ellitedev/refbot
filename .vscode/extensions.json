@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "formulahendry.code-runner",
+        "dbaeumer.vscode-eslint",
+        "jasonhaxstuff.discord-js-tools",
+        "darkempire78.discord-tools"
+    ]
+}
