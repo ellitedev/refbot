@@ -4,6 +4,7 @@
         "dbaeumer.vscode-eslint",
         "jasonhaxstuff.discord-js-tools",
         "darkempire78.discord-tools",
-        "waderyan.nodejs-extension-pack"
+        "waderyan.nodejs-extension-pack",
+        "roerohan.mongo-snippets-for-node-js"
     ]
 }
