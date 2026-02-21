@@ -36,8 +36,9 @@ GUILD_ID=serveridhere
 ## TO-DO
 In no order:
 - [x] Handle pick/ban cycle
+- [x] Mappool generation/management
+- [x] Ready checks
 - [ ] MongoDB match state persistence
-- [ ] Ready checks
+- [ ] Save mappool in MongoDB
 - [ ] start.gg match reporting
-- [ ] Mappool generation/management
 - [ ] Websocket match reporting
