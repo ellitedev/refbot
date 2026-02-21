@@ -82,58 +82,42 @@ function getBanContainer(randomPlayer) {
 		);
 }
 
-function getMapPoolContainer(nextPlayer) {
+function getMapPoolContainer(nextPlayer, currentMapPool) {
 	let mapPoolStr = '**Map Pool:**';
 	const mapPoolOptions = [];
 
-	for (const map of mapPool) {
+	for (const map of currentMapPool) {
 		mapPoolStr += '\n- ' + map;
 		mapPoolOptions.push(new StringSelectMenuOptionBuilder().setLabel(map).setValue(map));
 	}
 
-	return new ContainerBuilder()
+	const container = new ContainerBuilder()
 		.setAccentColor(accentColor)
 		.addTextDisplayComponents((textDisplay) =>
 			textDisplay.setContent(mapPoolStr),
 		)
-		.addSeparatorComponents((separator) => separator)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(`**${nextPlayer}**, it is your turn to ban!`),
-		)
-		.addActionRowComponents((actionRow) =>
-			actionRow.setComponents(new StringSelectMenuBuilder()
-				.setCustomId('mapSelect')
-				.setPlaceholder('Select a map to ban...')
-				.addOptions(mapPoolOptions),
-			),
+		.addSeparatorComponents((separator) => separator);
+
+	if (nextPlayer === null) {
+		container.addTextDisplayComponents((textDisplay) =>
+			textDisplay.setContent(`The map to be played is **${currentMapPool[0]}**!`),
 		);
-}
-
-function getRoundResultsContainer() {
-	let mapPoolStr = '**Map Pool:**';
-	const mapPoolOptions = [];
-
-	for (const map of mapPool) {
-		mapPoolStr += '\n- ' + map;
-		mapPoolOptions.push(new StringSelectMenuOptionBuilder().setLabel(map).setValue(map));
+	}
+	else {
+		container
+			.addTextDisplayComponents((textDisplay) =>
+				textDisplay.setContent(`**${nextPlayer}**, it is your turn to ban!`),
+			)
+			.addActionRowComponents((actionRow) =>
+				actionRow.setComponents(new StringSelectMenuBuilder()
+					.setCustomId('mapSelect')
+					.setPlaceholder('Select a map to ban...')
+					.addOptions(mapPoolOptions),
+				),
+			);
 	}
 
-	return new ContainerBuilder()
-		.setAccentColor(accentColor)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(mapPoolStr),
-		)
-		.addSeparatorComponents((separator) => separator)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(`**${interaction.user}**, it is your turn to select a map!`),
-		)
-		.addActionRowComponents((actionRow) =>
-			actionRow.setComponents(new StringSelectMenuBuilder()
-				.setCustomId('mapSelect')
-				.setPlaceholder('Select a map to play...')
-				.addOptions(mapPoolOptions),
-			),
-		);
+	return container;
 }
 
 module.exports = {
@@ -142,7 +126,7 @@ module.exports = {
 		.setDescription('Start the next match!'),
 	async execute(interaction) {
 		const response = await interaction.reply({
-			components: [getCheckInContainer(interaction)],
+			components: [getCheckInContainer()],
 			flags: MessageFlags.IsComponentsV2,
 			withResponse: true,
 		});
@@ -162,7 +146,7 @@ module.exports = {
 				});
 			}
 
-			if (player1 === i.user || player2 === i.user) {
+			if (process.env.NODE_ENV !== 'development' && (player1 === i.user || player2 === i.user)) {
 				await i.reply({
 					content: `You have already checked in as **${player1 === i.user ? players[0] : players[1]}**.`,
 					flags: MessageFlags.Ephemeral,
@@ -184,18 +168,21 @@ module.exports = {
 			}
 
 			if (player1 !== null && player2 !== null) {
+				checkInCol.stop();
+
 				const refApproval = await interaction.followUp({
 					components: [getRefApprovalContainer()],
-					flags: [
-						MessageFlags.IsComponentsV2,
-						MessageFlags.Ephemeral,
-					],
+					flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
 					withResponse: true,
 				});
 
-				const refApprovalConf = await refApproval.awaitMessageComponent();
+				const refApprovalConf = await refApproval.awaitMessageComponent({
+					filter: (k) => k.user.id === interaction.user.id,
+				});
 
 				if (refApprovalConf.customId === 'approve') {
+					await refApprovalConf.deferUpdate();
+
 					const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
 					const otherPlayer = randomPlayer !== player1 ? player1 : player2;
 
@@ -210,23 +197,54 @@ module.exports = {
 					const banCol = ban.createMessageComponentCollector({
 						filter: banFilter,
 						componentType: ComponentType.Button,
+						max: 1,
 					});
 
 					banCol.on('collect', async (j) => {
-						console.log(j);
-						const firstPlayer = j.values[0] === 'first' ? randomPlayer : otherPlayer;
+						await j.deferUpdate();
+						const firstPlayer = j.customId === 'first' ? randomPlayer : otherPlayer;
+						const secondPlayer = firstPlayer === randomPlayer ? otherPlayer : randomPlayer;
+						let currentMapPool = [...mapPool];
+						let banTurn = 0;
+						const banOrder = [firstPlayer, secondPlayer, firstPlayer, secondPlayer];
 
-						await interaction.followUp({
-							components: [getMapPoolContainer(firstPlayer)],
-							flags: [
-								MessageFlags.IsComponentsV2,
-								MessageFlags.Ephemeral,
-							],
-							withResponse: true,
+						await interaction.editReply({
+							components: [getMapPoolContainer(banOrder[banTurn], currentMapPool)],
+							flags: MessageFlags.IsComponentsV2,
+						});
+
+						const banMessage = await interaction.fetchReply();
+
+						const banSelectCol = banMessage.createMessageComponentCollector({
+							filter: (k) => k.user.id === banOrder[banTurn].id,
+							componentType: ComponentType.StringSelect,
+						});
+
+						banSelectCol.on('collect', async (k) => {
+							await k.deferUpdate();
+							const banned = k.values[0];
+							currentMapPool = currentMapPool.filter((m) => m !== banned);
+							banTurn++;
+
+							if (currentMapPool.length <= 1) {
+								banSelectCol.stop();
+								await interaction.editReply({
+									components: [getMapPoolContainer(null, currentMapPool)],
+									flags: MessageFlags.IsComponentsV2,
+								});
+								return;
+							}
+
+							await interaction.editReply({
+								components: [getMapPoolContainer(banOrder[banTurn], currentMapPool)],
+								flags: MessageFlags.IsComponentsV2,
+							});
 						});
 					});
 				}
 				else if (refApprovalConf.customId === 'reject') {
+					await refApprovalConf.deferUpdate();
+
 					await interaction.editReply({
 						components: [
 							new ContainerBuilder()
@@ -235,43 +253,10 @@ module.exports = {
 									textDisplay.setContent('Check in terminated.'),
 								),
 						],
-						flags: [
-							MessageFlags.IsComponentsV2,
-						],
+						flags: [MessageFlags.IsComponentsV2],
 					});
 				}
 			}
-
 		});
-
-		// const collector = response.resource.message.createMessageComponentCollector({
-		// 	componentType: ComponentType.StringSelect,
-		// 	time: 3600000,
-		// });
-
-		// collector.on('collect', async (i) => {
-		// 	const selection = i.values[0];
-		// 	const resultContainer = new ContainerBuilder()
-		// 		.setAccentColor(accentColor)
-		// 		.addTextDisplayComponents((textDisplay) =>
-		// 			textDisplay.setContent(`**${i.user.username}** has selected **${selection}**!`),
-		// 		)
-		// 		.addTextDisplayComponents((textDisplay) =>
-		// 			textDisplay.setContent(`**${i.user}**, please click the button below when you are ready.`),
-		// 		)
-		// 		.addActionRowComponents((actionRow) =>
-		// 			actionRow.setComponents(new ButtonBuilder()
-		// 				.setCustomId('ready')
-		// 				.setLabel('Ready')
-		// 				.setStyle(ButtonStyle.Success),
-		// 			),
-		// 		);
-
-		// 	await interaction.editReply({
-		// 		components: [resultContainer],
-		// 		flags: MessageFlags.IsComponentsV2,
-		// 		withResponse: true,
-		// 	});
-		// });
 	},
 };
