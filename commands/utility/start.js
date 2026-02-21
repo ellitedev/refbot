@@ -1,132 +1,68 @@
-const { ContainerBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, SlashCommandBuilder, MessageFlags, ComponentType } = require('discord.js');
-
-const accentColor = 0x40ffa0;
-const mapPool = [
-	'Chromatically - smb',
-	'The Code - TreXDer & LuminaryCat',
-	'Won\'t Let You Go - Dacey',
-	'Down With Your Love - Steven of Astora',
-	'Spring Thief - Stride',
-];
-
-const players = ['Player 1', 'Player 2'];
-let player1 = null;
-let player2 = null;
-
-function getCheckInContainer() {
-	const playerOptions = [];
-	for (const player of players) {
-		playerOptions.push(new StringSelectMenuOptionBuilder().setLabel(player).setValue(player));
-	}
-
-	return new ContainerBuilder()
-		.setAccentColor(accentColor)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent('## SpeenOpen Qualifiers - Pool AA1 - Match A'),
-		)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent('Players, please check in using the dropdown below.'),
-		)
-		.addActionRowComponents((actionRow) =>
-			actionRow.setComponents(new StringSelectMenuBuilder()
-				.setCustomId('playerCheckIn')
-				.setPlaceholder('Select your start.gg username')
-				.addOptions(playerOptions),
-			),
-		);
-}
-
-function getRefApprovalContainer() {
-	return new ContainerBuilder()
-		.setAccentColor(accentColor)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(`**${player1.username}** has checked in as **${players[0]}**.\n**${player2.username}** has checked in as **${players[1]}**.`),
-		)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent('If this looks correct, please press the **Approve** button below.\nOtherwise, press the **Reject** button to terminate the check in process.'),
-		)
-		.addActionRowComponents((actionRow) =>
-			actionRow.setComponents(
-				new ButtonBuilder()
-					.setCustomId('approve')
-					.setLabel('Approve')
-					.setStyle(ButtonStyle.Success),
-				new ButtonBuilder()
-					.setCustomId('reject')
-					.setLabel('Reject')
-					.setStyle(ButtonStyle.Danger),
-			),
-		);
-}
-
-function getBanContainer(randomPlayer) {
-	return new ContainerBuilder()
-		.setAccentColor(accentColor)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(`**${randomPlayer.username}** has been randomly chosen!`),
-		)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(`**${randomPlayer}**, would you like to ban first or second?`),
-		)
-		.addActionRowComponents((actionRow) =>
-			actionRow.setComponents(
-				new ButtonBuilder()
-					.setCustomId('first')
-					.setLabel('First')
-					.setStyle(ButtonStyle.Primary),
-				new ButtonBuilder()
-					.setCustomId('second')
-					.setLabel('Second')
-					.setStyle(ButtonStyle.Primary),
-			),
-		);
-}
-
-function getMapPoolContainer(nextPlayer, currentMapPool) {
-	let mapPoolStr = '**Map Pool:**';
-	const mapPoolOptions = [];
-
-	for (const map of currentMapPool) {
-		mapPoolStr += '\n- ' + map;
-		mapPoolOptions.push(new StringSelectMenuOptionBuilder().setLabel(map).setValue(map));
-	}
-
-	const container = new ContainerBuilder()
-		.setAccentColor(accentColor)
-		.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(mapPoolStr),
-		)
-		.addSeparatorComponents((separator) => separator);
-
-	if (nextPlayer === null) {
-		container.addTextDisplayComponents((textDisplay) =>
-			textDisplay.setContent(`The map to be played is **${currentMapPool[0]}**!`),
-		);
-	}
-	else {
-		container
-			.addTextDisplayComponents((textDisplay) =>
-				textDisplay.setContent(`**${nextPlayer}**, it is your turn to ban!`),
-			)
-			.addActionRowComponents((actionRow) =>
-				actionRow.setComponents(new StringSelectMenuBuilder()
-					.setCustomId('mapSelect')
-					.setPlaceholder('Select a map to ban...')
-					.addOptions(mapPoolOptions),
-				),
-			);
-	}
-
-	return container;
-}
+const { SlashCommandBuilder, MessageFlags, ComponentType } = require('discord.js');
+const { players, initMatchState } = require('../../state/match.js');
+const { getMatchPool } = require('../../state/generatedPools.js');
+const { ROUNDS, getRound } = require('../../state/rounds.js');
+const {
+	getCheckInContainer,
+	getRefApprovalContainer,
+	getBanOrderContainer,
+	getBanContainer,
+	getPickContainer,
+	getSimpleContainer,
+} = require('../../ui/matchContainers.js');
+const { startPickPhase } = require('../../util/matchFlow.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('start')
-		.setDescription('Start the next match!'),
+		.setDescription('Start the next match!')
+		.addStringOption((o) =>
+			o.setName('round')
+				.setDescription('The round being played')
+				.setRequired(true)
+				.setAutocomplete(true),
+		)
+		.addIntegerOption((o) =>
+			o.setName('match')
+				.setDescription('Match number within this round (1-indexed)')
+				.setRequired(true)
+				.setMinValue(1),
+		),
+
+	async autocomplete(interaction) {
+		const focused = interaction.options.getFocused().toLowerCase();
+		const filtered = ROUNDS
+			.filter((r) => r.name.toLowerCase().includes(focused))
+			.slice(0, 25)
+			.map((r) => ({ name: `${r.name} — Bo${r.bestOf} T${r.tier}`, value: r.name }));
+		await interaction.respond(filtered);
+	},
+
 	async execute(interaction) {
+		const roundName = interaction.options.getString('round');
+		const matchNumber = interaction.options.getInteger('match');
+		const round = getRound(roundName);
+
+		if (!round) {
+			await interaction.reply({ content: '❌ Unknown round. Please select one from the autocomplete list.', flags: MessageFlags.Ephemeral });
+			return;
+		}
+
+		let mapPool;
+		try {
+			mapPool = getMatchPool(round.bracket, round.round, matchNumber - 1);
+		}
+		catch (err) {
+			await interaction.reply({ content: `❌ ${err.message}`, flags: MessageFlags.Ephemeral });
+			return;
+		}
+
+		const { bestOf, tier } = round;
+		let player1 = null;
+		let player2 = null;
+
 		const response = await interaction.reply({
-			components: [getCheckInContainer()],
+			components: [getCheckInContainer(players)],
 			flags: MessageFlags.IsComponentsV2,
 			withResponse: true,
 		});
@@ -139,142 +75,126 @@ module.exports = {
 			const selection = i.values[0];
 			const index = players.indexOf(selection);
 
-			async function success() {
-				await i.reply({
-					content: `You have checked in as **${selection}**. Please wait for referee approval.`,
-					flags: MessageFlags.Ephemeral,
-				});
-			}
-
 			if (process.env.NODE_ENV !== 'development' && (player1 === i.user || player2 === i.user)) {
 				await i.reply({
 					content: `You have already checked in as **${player1 === i.user ? players[0] : players[1]}**.`,
 					flags: MessageFlags.Ephemeral,
 				});
+				return;
 			}
-			else if (index === 0 && player1 === null) {
+
+			if (index === 0 && player1 === null) {
 				player1 = i.user;
-				success();
+				await i.reply({ content: `You have checked in as **${selection}**. Please wait for referee approval.`, flags: MessageFlags.Ephemeral });
 			}
 			else if (index === 1 && player2 === null) {
 				player2 = i.user;
-				success();
+				await i.reply({ content: `You have checked in as **${selection}**. Please wait for referee approval.`, flags: MessageFlags.Ephemeral });
 			}
 			else {
-				await i.reply({
-					content: `**${selection}** has already been selected.`,
-					flags: MessageFlags.Ephemeral,
-				});
+				await i.reply({ content: `**${selection}** has already been selected.`, flags: MessageFlags.Ephemeral });
+				return;
 			}
 
-			if (player1 !== null && player2 !== null) {
-				checkInCol.stop();
+			if (player1 === null || player2 === null) return;
+			checkInCol.stop();
 
-				const refApproval = await interaction.followUp({
-					components: [getRefApprovalContainer()],
+			const refApproval = await interaction.followUp({
+				components: [getRefApprovalContainer(player1, player2, players)],
+				flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+				withResponse: true,
+			});
+
+			const refApprovalConf = await refApproval.awaitMessageComponent({
+				filter: (k) => k.user.id === interaction.user.id,
+			});
+
+			if (refApprovalConf.customId === 'reject') {
+				await refApprovalConf.update({
+					components: [getSimpleContainer('❌ Rejected! Check in terminated.')],
 					flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-					withResponse: true,
+				});
+				await interaction.editReply({
+					components: [getSimpleContainer('Check in terminated.')],
+					flags: MessageFlags.IsComponentsV2,
+				});
+				return;
+			}
+
+			await refApprovalConf.update({
+				components: [getSimpleContainer('✅ Approved! Starting ban phase...')],
+				flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+			});
+
+			const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
+			const otherPlayer = randomPlayer !== player1 ? player1 : player2;
+
+			const banOrderMsg = await interaction.editReply({
+				components: [getBanOrderContainer(randomPlayer)],
+				flags: MessageFlags.IsComponentsV2,
+				withResponse: true,
+			});
+
+			const banOrderCol = banOrderMsg.createMessageComponentCollector({
+				filter: (j) => j.user.id === randomPlayer.id,
+				componentType: ComponentType.Button,
+				max: 1,
+			});
+
+			banOrderCol.on('collect', async (j) => {
+				await j.deferUpdate();
+
+				const firstBanner = j.customId === 'first' ? randomPlayer : otherPlayer;
+				const secondBanner = firstBanner === randomPlayer ? otherPlayer : randomPlayer;
+				const numBans = mapPool.length - 1;
+				const banOrder = Array.from({ length: numBans }, (_, i) => (i % 2 === 0 ? firstBanner : secondBanner));
+				let currentMapPool = [...mapPool];
+				let banTurn = 0;
+
+				const state = initMatchState(player1, player2, firstBanner, bestOf, tier, currentMapPool, interaction);
+
+				await interaction.editReply({
+					components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
+					flags: MessageFlags.IsComponentsV2,
 				});
 
-				const refApprovalConf = await refApproval.awaitMessageComponent({
-					filter: (k) => k.user.id === interaction.user.id,
+				const banMessage = await interaction.fetchReply();
+
+				const banSelectCol = banMessage.createMessageComponentCollector({
+					componentType: ComponentType.StringSelect,
+					filter: (k) => k.customId === 'mapBan',
 				});
 
-				if (refApprovalConf.customId === 'approve') {
-					await refApprovalConf.update({
-						components: [
-							new ContainerBuilder()
-								.setAccentColor(accentColor)
-								.addTextDisplayComponents((textDisplay) =>
-									textDisplay.setContent('✅ Approved! Starting ban phase...'),
-								),
-						],
-						flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-					});
+				banSelectCol.on('collect', async (k) => {
+					if (k.user.id !== banOrder[banTurn].id) {
+						await k.reply({ content: 'It\'s not your turn to ban!', flags: MessageFlags.Ephemeral });
+						return;
+					}
 
-					const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
-					const otherPlayer = randomPlayer !== player1 ? player1 : player2;
+					await k.deferUpdate();
+					currentMapPool = currentMapPool.filter((m) => m !== k.values[0]);
+					banTurn++;
 
-					const ban = await interaction.editReply({
-						components: [getBanContainer(randomPlayer)],
-						flags: [MessageFlags.IsComponentsV2],
-						withResponse: true,
-					});
-
-					const banFilter = (j) => j.user.id === randomPlayer.id;
-
-					const banCol = ban.createMessageComponentCollector({
-						filter: banFilter,
-						componentType: ComponentType.Button,
-						max: 1,
-					});
-
-					banCol.on('collect', async (j) => {
-						await j.deferUpdate();
-						const firstPlayer = j.customId === 'first' ? randomPlayer : otherPlayer;
-						const secondPlayer = firstPlayer === randomPlayer ? otherPlayer : randomPlayer;
-						let currentMapPool = [...mapPool];
-						let banTurn = 0;
-						const banOrder = [firstPlayer, secondPlayer, firstPlayer, secondPlayer];
+					if (currentMapPool.length <= 1) {
+						banSelectCol.stop();
+						state.currentMapPool = [...currentMapPool];
 
 						await interaction.editReply({
-							components: [getMapPoolContainer(banOrder[banTurn], currentMapPool)],
+							components: [getPickContainer(firstBanner, currentMapPool, state.score, state.playerNames, bestOf)],
 							flags: MessageFlags.IsComponentsV2,
 						});
 
-						const banMessage = await interaction.fetchReply();
-
-						const banSelectCol = banMessage.createMessageComponentCollector({
-							filter: (k) => k.user.id === banOrder[banTurn].id,
-							componentType: ComponentType.StringSelect,
-						});
-
-						banSelectCol.on('collect', async (k) => {
-							await k.deferUpdate();
-							const banned = k.values[0];
-							currentMapPool = currentMapPool.filter((m) => m !== banned);
-							banTurn++;
-
-							if (currentMapPool.length <= 1) {
-								banSelectCol.stop();
-								await interaction.editReply({
-									components: [getMapPoolContainer(null, currentMapPool)],
-									flags: MessageFlags.IsComponentsV2,
-								});
-								return;
-							}
-
-							await interaction.editReply({
-								components: [getMapPoolContainer(banOrder[banTurn], currentMapPool)],
-								flags: MessageFlags.IsComponentsV2,
-							});
-						});
-					});
-				}
-				else if (refApprovalConf.customId === 'reject') {
-					await refApprovalConf.update({
-						components: [
-							new ContainerBuilder()
-								.setAccentColor(accentColor)
-								.addTextDisplayComponents((textDisplay) =>
-									textDisplay.setContent('❌ Rejected! Check in terminated.'),
-								),
-						],
-						flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-					});
+						const pickMessage = await interaction.fetchReply();
+						startPickPhase(interaction, pickMessage, state);
+						return;
+					}
 
 					await interaction.editReply({
-						components: [
-							new ContainerBuilder()
-								.setAccentColor(accentColor)
-								.addTextDisplayComponents((textDisplay) =>
-									textDisplay.setContent('Check in terminated.'),
-								),
-						],
-						flags: [MessageFlags.IsComponentsV2],
+						components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
+						flags: MessageFlags.IsComponentsV2,
 					});
-				}
-			}
+				});
+			});
 		});
 	},
 };

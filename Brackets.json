@@ -1,0 +1,165 @@
+[
+	{
+		"name": "Qualifiers",
+		"rounds": [
+			{
+				"name": "Winners 1",
+				"pool": 0,
+				"matches": 16,
+				"charts": 5
+			},
+			{
+				"name": "Winners 2",
+				"pool": 1,
+				"matches": 8,
+				"charts": 5
+			},
+			{
+				"name": "Losers 1",
+				"pool": 0,
+				"matches": 8,
+				"charts": 5
+			},
+			{
+				"name": "Losers 2",
+				"pool": 1,
+				"matches": 8,
+				"charts": 5
+			},
+			{
+				"name": "Finals",
+				"pool": 1,
+				"matches": 8,
+				"charts": 5
+			},
+			{
+				"name": "Finals (Reset)",
+				"pool": 1,
+				"matches": 8,
+				"charts": 5
+			}
+		]
+	},
+	{
+		"name": "Challenger",
+		"rounds": [
+			{
+				"name": "Winners 1",
+				"pool": 1,
+				"matches": 4,
+				"charts": 7
+			},
+			{
+				"name": "Winners 2",
+				"pool": 2,
+				"matches": 2,
+				"charts": 9
+			},
+			{
+				"name": "Winners Finals",
+				"pool": 2,
+				"matches": 1,
+				"charts": 11
+			},
+			{
+				"name": "Losers 1",
+				"pool": 1,
+				"matches": 2,
+				"charts": 7
+			},
+			{
+				"name": "Losers 2",
+				"pool": 2,
+				"matches": 2,
+				"charts": 7
+			},
+			{
+				"name": "Losers 3",
+				"pool": 2,
+				"matches": 1,
+				"charts": 9
+			},
+			{
+				"name": "Losers Finals",
+				"pool": 2,
+				"matches": 1,
+				"charts": 9
+			},
+			{
+				"name": "Grand Finals",
+				"pool": 2,
+				"matches": 1,
+				"charts": 11,
+				"hardestOnly": true
+			},
+			{
+				"name": "Grand Finals (Reset)",
+				"pool": 2,
+				"matches": 1,
+				"charts": 11,
+				"hardestOnly": true
+			}
+		]
+	},
+	{
+		"name": "Elite",
+		"rounds": [
+			{
+				"name": "Winners 1",
+				"pool": 2,
+				"matches": 4,
+				"charts": 7
+			},
+			{
+				"name": "Winners 2",
+				"pool": 3,
+				"matches": 2,
+				"charts": 9
+			},
+			{
+				"name": "Winners Finals",
+				"pool": 3,
+				"matches": 1,
+				"charts": 11
+			},
+			{
+				"name": "Losers 1",
+				"pool": 2,
+				"matches": 2,
+				"charts": 7
+			},
+			{
+				"name": "Losers 2",
+				"pool": 3,
+				"matches": 2,
+				"charts": 7
+			},
+			{
+				"name": "Losers 3",
+				"pool": 3,
+				"matches": 1,
+				"charts": 9
+			},
+			{
+				"name": "Losers Finals",
+				"pool": 3,
+				"matches": 1,
+				"charts": 9
+			},
+			{
+				"name": "Grand Finals",
+				"pool": 3,
+				"matches": 1,
+				"charts": 11,
+				"hardestOnly": true
+			},
+			{
+				"name": "Grand Finals (Reset)",
+				"pool": 3,
+				"matches": 1,
+				"charts": 11,
+				"hardestOnly": true
+			}
+		]
+	}
+]
