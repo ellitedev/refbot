@@ -181,7 +181,16 @@ module.exports = {
 				});
 
 				if (refApprovalConf.customId === 'approve') {
-					await refApprovalConf.deferUpdate();
+					await refApprovalConf.update({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((textDisplay) =>
+									textDisplay.setContent('✅ Approved! Starting ban phase...'),
+								),
+						],
+						flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+					});
 
 					const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
 					const otherPlayer = randomPlayer !== player1 ? player1 : player2;
@@ -243,7 +252,16 @@ module.exports = {
 					});
 				}
 				else if (refApprovalConf.customId === 'reject') {
-					await refApprovalConf.deferUpdate();
+					await refApprovalConf.update({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((textDisplay) =>
+									textDisplay.setContent('❌ Rejected! Check in terminated.'),
+								),
+						],
+						flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+					});
 
 					await interaction.editReply({
 						components: [
