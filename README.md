@@ -1,23 +1,43 @@
 # SpinShare Speen Open Referee Bot
-Simple discord bot to help Referees do their job more easily!
+A Discord bot to help referees manage matches more easily!
 
-## Contributing
-To get started, please run install Node v25.2.1. I suggest using NVM (Node Version Manager) to install it.
+## Setup
 
-Then, run `npm i` in the root directory, let npm install dependencies, and you *should* be ready to go!
+### Prerequisites
+- Node.js v24+
+- A Discord bot application with a token
+- A MongoDB instance
 
-Make sure to create a `.env` file in the root directory, and put this in it:
+### Installation
+1. Clone the repository
+2. Run `npm i` in the root directory
+3. Create a `.env` file in the root directory:
 ```env
 DISCORD_TOKEN=tokenhere
 CLIENT_ID=discordbotapplicationidhere
 GUILD_ID=serveridhere
 ```
 
+### Running
+- `npm run deploy` — registers slash commands with Discord (run this whenever you add or change commands)
+- `npm run dev` — runs the bot in development mode with auto-restart on file changes
+- `npm start` — runs the bot in production mode
+
+## Features
+- **/start** — starts a match, handling:
+  - player check-in via dropdown
+  - referee approval
+  - random ban order selection
+  - alternating ban phase until one map remains
+- **/ping** — replies with Pong!
+- **/server** — displays server info
+- **/user** — displays user info
+
 ## TO-DO
 In no order:
-- [ ] Manage start.gg matches (report data)
-- [ ] Generate/manage mappools (maybe ask Ricki)
-- [ ] Handle pick/ban cycle
-- [ ] Handle ready checks
-- [ ] Report match information (mappool, pick ban cycle, ready status) through websocket or something?
-- [ ] more?
+- [x] Handle pick/ban cycle
+- [ ] MongoDB match state persistence
+- [ ] Ready checks
+- [ ] start.gg match reporting
+- [ ] Mappool generation/management
+- [ ] Websocket match reporting
