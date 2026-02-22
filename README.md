@@ -21,23 +21,24 @@ WS_PORT=websocketporthere
 ```
 
 ### Running
-- `npm run deploy` — registers slash commands with Discord (run this whenever you add or change commands)
-- `npm run dev` — runs the bot in development mode with auto-restart on file changes
-- `npm start` — runs the bot in production mode
+- `npm run deploy` - registers slash commands with Discord (run this whenever you add or change commands)
+- `npm run dev` - runs the bot in development mode with auto-restart on file changes
+- `npm start` - runs the bot in production mode
 
 ## Features
-- **/start** — starts a match, handling:
+- **/start** - starts a match, handling:
   - player check-in via dropdown
   - referee approval
   - random ban order selection
   - alternating ban phase until one map remains
-- **/restart** — restarts a previously completed match with the same map pool
-- **/result** — submits the result of the current chart
-- **/clean** — cleans up stuck or abandoned matches
-- **/refresh** — fetches the map pool from a Google Sheets URL and caches SpinShare chart data
-- **/generate** — generates all match pools for the tournament (maybe integrate this into `/refresh` instead?)
-- **/event** — creates, switches, and lists events
-- **/ping** — replies with "Pong!" and how long the command took to execute.
+- **/restart** - restarts a previously completed match with the same map pool
+- **/result** - submits the result of the current chart
+- **/clean** - cleans up stuck or abandoned matches
+- **/refresh** - fetches the map pool from a Google Sheets URL and caches SpinShare chart data
+- **/generate** - generates all match pools for the tournament (maybe integrate this into `/refresh` instead?)
+- **/event** - creates, switches, and lists events
+- **/ping** - replies with "Pong!" and how long the command took to execute.
+- **/hostname** - replies with hostname of current environment
 
 ## TO-DO
 In no order:
