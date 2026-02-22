@@ -53,3 +53,5 @@ In no order:
 - [x] SpinShare chart metadata + album art
 - [x] Match history and restart support
 - [ ] start.gg match reporting
+- [ ] Support for friendly's, outside of tournament play. (This means we need to be able to run concurrent matches)
+- [ ] Permission checks, only people with a certain role should be allowed to run certain events and commands, might need a complete re-write.
