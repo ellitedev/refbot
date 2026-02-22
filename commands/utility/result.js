@@ -1,7 +1,8 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { getMatchState, resetMatchState } = require('../../state/match.js');
+const { getMatchState, resetMatchState, recordChartResult, completeMatch, saveMatchState } = require('../../state/match.js');
 const { getPickContainer, getWinnerContainer } = require('../../ui/matchContainers.js');
 const { startPickPhase } = require('../../util/matchFlow.js');
+const { broadcastMatchState } = require('../../util/broadcastMatch.js');
 
 function fcLabel(score, fc, pfc) {
 	if (pfc) return `${score} [PFC]`;
@@ -52,6 +53,28 @@ module.exports = {
 		state.playedCharts.push(chart);
 		state.currentMapPool = state.fullMapPool.filter((m) => !state.playedCharts.includes(m));
 
+		await recordChartResult({
+			chart,
+			score1,
+			score2,
+			fc1,
+			fc2,
+			pfc1,
+			pfc2,
+			winner: winnerName,
+		});
+
+		await broadcastMatchState('match.chartResult', state, {
+			chart,
+			score1,
+			score2,
+			fc1,
+			fc2,
+			pfc1,
+			pfc2,
+			winner: winnerName,
+		});
+
 		const scoreStr = [
 			'```',
 			`Chart Results: ${chart}`,
@@ -67,19 +90,22 @@ module.exports = {
 
 		const matchOver = state.score[0] >= state.winsNeeded || state.score[1] >= state.winsNeeded;
 
-		await interaction.reply({ content: scoreStr });
+		await interaction.reply({ content: scoreStr, flags: MessageFlags.Ephemeral });
 
 		if (matchOver) {
+			await broadcastMatchState('match.end', state, { winner: winnerName });
+			await completeMatch(winnerName);
 			await state.interaction.editReply({
 				content: '',
 				components: [getWinnerContainer(winner, state.score, state.playerNames, state.bestOf)],
 				flags: MessageFlags.IsComponentsV2,
 			});
-			resetMatchState();
 			return;
 		}
 
 		state.currentPicker = winner;
+		await saveMatchState();
+		await broadcastMatchState('match.pick', state);
 
 		await state.interaction.editReply({
 			content: '',

@@ -1,3 +1,7 @@
+const MapPoolModel = require('../models/MapPool.js');
+const { getActiveEvent } = require('./event.js');
+const { extractSongId, fetchAndCacheChart } = require('./spinshare.js');
+
 let cache = null;
 let lastFetched = null;
 
@@ -35,25 +39,79 @@ function parseCSV(text) {
 		const cols = parseCSVLine(lines[i]);
 		const songName = cols[1];
 		const charter = cols[3];
+		const spinshareUrl = cols[4];
 		const tier = parseInt(cols[7]);
 
 		if (!songName || isNaN(tier)) continue;
 		if (!pools[tier]) continue;
 
-		pools[tier].push(`${songName} - ${charter}`);
+		const songId = extractSongId(spinshareUrl);
+		const csvName = `${songName} - ${charter}`;
+
+		pools[tier].push({ songId, csvName });
 	}
 
 	return pools;
 }
 
 async function fetchMapPool(sheetUrl) {
+	const event = getActiveEvent();
+	if (!event) throw new Error('No active event! Use /event to create or switch to one.');
+
 	const csvUrl = toCsvUrl(sheetUrl);
 	const res = await fetch(csvUrl);
 	if (!res.ok) throw new Error(`Failed to fetch map pool: ${res.status} ${res.statusText}`);
 	const text = await res.text();
-	cache = parseCSV(text);
+	const pools = parseCSV(text);
+
+	const poolsForDB = {};
+	for (const [tier, charts] of Object.entries(pools)) {
+		poolsForDB[tier] = charts.map((c) => ({ songId: c.songId, csvName: c.csvName }));
+	}
+
+	await MapPoolModel.findOneAndUpdate(
+		{ event: event._id },
+		{ event: event._id, pools: poolsForDB, lastFetched: new Date() },
+		{ upsert: true, new: true },
+	);
+
+	cache = pools;
 	lastFetched = new Date();
-	return cache;
+
+	fetchAllChartData(pools).catch((err) => console.error('[spinshare] Background fetch error:', err));
+
+	return pools;
+}
+
+async function fetchAllChartData(pools) {
+	const allCharts = Object.values(pools).flat();
+	console.log(`[spinshare] Fetching data for ${allCharts.length} charts...`);
+	let success = 0;
+	for (const { songId, csvName } of allCharts) {
+		if (!songId) continue;
+		const doc = await fetchAndCacheChart(songId, csvName);
+		if (doc) success++;
+		await new Promise((r) => setTimeout(r, 150));
+	}
+	console.log(`[spinshare] Fetched ${success}/${allCharts.length} charts successfully.`);
+}
+
+async function loadMapPoolFromDB() {
+	const event = getActiveEvent();
+	if (!event) return;
+	const doc = await MapPoolModel.findOne({ event: event._id });
+	if (!doc) return;
+
+	const rawPools = Object.fromEntries(doc.pools);
+	cache = {};
+	for (const [tier, charts] of Object.entries(rawPools)) {
+		cache[tier] = charts.map((c) =>
+			typeof c === 'string'
+				? { songId: null, csvName: c }
+				: { songId: c.songId ?? null, csvName: c.csvName },
+		);
+	}
+	lastFetched = doc.lastFetched;
 }
 
 function getPool(tier) {
@@ -67,4 +125,4 @@ function getCacheInfo() {
 	return { loaded: cache !== null, lastFetched };
 }
 
-module.exports = { fetchMapPool, getPool, getCacheInfo };
+module.exports = { fetchMapPool, loadMapPoolFromDB, getPool, getCacheInfo };

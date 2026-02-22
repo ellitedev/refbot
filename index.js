@@ -2,11 +2,42 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Client, Events, GatewayIntentBits, MessageFlags, Collection } = require('discord.js');
 require('dotenv').config({ quiet: true });
+const { connectDB } = require('./state/db.js');
+const { loadActiveEvent, getActiveEvent } = require('./state/event.js');
+const { loadMapPoolFromDB } = require('./state/mapPool.js');
+const { loadGeneratedPoolsFromDB } = require('./state/generatedPools.js');
+const { loadInProgressMatch, getMatchStateRef } = require('./state/match.js');
+const { resumeMatch } = require('./util/resumeMatch.js');
+const { startWebSocketServer } = require('./state/ws.js');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
 	console.log('Ready! Logged in as', readyClient.user.tag);
+
+	startWebSocketServer();
+	await connectDB();
+	await loadActiveEvent();
+
+	const event = getActiveEvent();
+	if (event) {
+		console.log(`Active event: ${event.name}`);
+		await loadMapPoolFromDB();
+		await loadGeneratedPoolsFromDB();
+
+		const inProgress = await loadInProgressMatch();
+		if (inProgress) {
+			console.log(`⚠️  Found in-progress match (${inProgress.round} #${inProgress.matchNumber}) — attempting auto-resume...`);
+			const stateRef = getMatchStateRef();
+			const resumed = await resumeMatch(readyClient, inProgress, stateRef);
+			if (!resumed) {
+				console.error('[resume] Auto-resume failed. A referee may need to intervene manually.');
+			}
+		}
+	}
+	else {
+		console.log('No active event. Use /event create to get started.');
+	}
 });
 
 client.login(process.env.DISCORD_TOKEN);

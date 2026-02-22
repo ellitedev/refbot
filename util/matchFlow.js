@@ -1,12 +1,27 @@
 const { MessageFlags, ComponentType } = require('discord.js');
 const { getReadyCheckContainer, getCountdownContainer } = require('../ui/matchContainers.js');
+const { broadcastMatchState } = require('./broadcastMatch.js');
+const ChartModel = require('../models/Chart.js');
+
+async function getCoverUrl(chartName) {
+	if (!chartName) return null;
+	try {
+		const doc = await ChartModel.findOne({ csvName: chartName });
+		return doc?.cover ?? null;
+	}
+	catch {
+		return null;
+	}
+}
 
 async function startReadyCheck(interaction, chart, state) {
 	let p1Ready = false;
 	let p2Ready = false;
 
+	const coverUrl = await getCoverUrl(chart);
+
 	const readyMsg = await interaction.editReply({
-		components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, true)],
+		components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, true, null, coverUrl)],
 		flags: MessageFlags.IsComponentsV2,
 	});
 
@@ -27,15 +42,17 @@ async function startReadyCheck(interaction, chart, state) {
 
 		if (p1Ready && p2Ready) {
 			readyCol.stop();
+			state.currentChart = chart;
+			await broadcastMatchState('match.chartStart', state);
 			await interaction.editReply({
-				components: [getCountdownContainer(chart)],
+				components: [getCountdownContainer(chart, coverUrl)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 		}
 		else {
 			const unreadyPlayer = !p1Ready ? state.player1 : state.player2;
 			await interaction.editReply({
-				components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, false, unreadyPlayer)],
+				components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, false, unreadyPlayer, coverUrl)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 		}
@@ -46,6 +63,7 @@ async function startPickPhase(interaction, message, state) {
 	if (state.currentMapPool.length === 1) {
 		const chart = state.currentMapPool[0];
 		state.currentChart = chart;
+		await broadcastMatchState('match.chartStart', state);
 		await startReadyCheck(interaction, chart, state);
 		return;
 	}
@@ -64,6 +82,7 @@ async function startPickPhase(interaction, message, state) {
 		await i.deferUpdate();
 		const picked = i.values[0];
 		state.currentChart = picked;
+		await broadcastMatchState('match.pick', state);
 		pickCol.stop();
 
 		await startReadyCheck(interaction, picked, state);

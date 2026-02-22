@@ -1,4 +1,4 @@
-const { ContainerBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+const { ContainerBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder } = require('discord.js');
 
 const accentColor = 0x40ffa0;
 
@@ -113,7 +113,7 @@ function getPickContainer(nextPicker, currentMapPool, score, playerNames, bestOf
 	return container;
 }
 
-function getReadyCheckContainer(chart, p1, p2, p1Ready, p2Ready, initialPing = false, unreadyPlayer = null) {
+function getReadyCheckContainer(chart, p1, p2, p1Ready, p2Ready, initialPing = false, unreadyPlayer = null, coverUrl = null) {
 	const p1Status = p1Ready ? '✅' : '⬜';
 	const p2Status = p2Ready ? '✅' : '⬜';
 
@@ -121,8 +121,18 @@ function getReadyCheckContainer(chart, p1, p2, p1Ready, p2Ready, initialPing = f
 	if (initialPing) pingLine = `<@${p1.id}> <@${p2.id}>\n`;
 	else if (unreadyPlayer) pingLine = `<@${unreadyPlayer.id}>\n`;
 
-	return new ContainerBuilder()
-		.setAccentColor(accentColor)
+	const container = new ContainerBuilder()
+		.setAccentColor(accentColor);
+
+	if (coverUrl) {
+		container.addMediaGalleryComponents(
+			new MediaGalleryBuilder().addItems(
+				new MediaGalleryItemBuilder().setURL(coverUrl),
+			),
+		);
+	}
+
+	container
 		.addTextDisplayComponents((t) => t.setContent(`${pingLine}**${chart}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent(`${p1Status} ${p1.username}\n${p2Status} ${p2.username}`))
 		.addActionRowComponents((row) =>
@@ -130,13 +140,27 @@ function getReadyCheckContainer(chart, p1, p2, p1Ready, p2Ready, initialPing = f
 				new ButtonBuilder().setCustomId('ready').setLabel('Ready!').setStyle(ButtonStyle.Success),
 			),
 		);
+
+	return container;
 }
 
-function getCountdownContainer(chart) {
-	return new ContainerBuilder()
-		.setAccentColor(accentColor)
+function getCountdownContainer(chart, coverUrl = null) {
+	const container = new ContainerBuilder()
+		.setAccentColor(accentColor);
+
+	if (coverUrl) {
+		container.addMediaGalleryComponents(
+			new MediaGalleryBuilder().addItems(
+				new MediaGalleryItemBuilder().setURL(coverUrl),
+			),
+		);
+	}
+
+	container
 		.addTextDisplayComponents((t) => t.setContent(`**${chart}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent('Both players ready! Starting countdown...'));
+
+	return container;
 }
 
 function getWinnerContainer(winner, score, playerNames, bestOf) {
