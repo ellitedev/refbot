@@ -3,6 +3,7 @@ const { getMatchState, recordChartResult, completeMatch, saveMatchState } = requ
 const { getPickContainer, getWinnerContainer } = require('../../ui/matchContainers.js');
 const { startPickPhase } = require('../../util/matchFlow.js');
 const { broadcastMatchState } = require('../../util/broadcastMatch.js');
+const { requireReferee } = require('../../util/requireReferee.js');
 
 function fcLabel(score, fc, pfc) {
 	if (pfc) return `${score} [PFC]`;
@@ -22,6 +23,8 @@ module.exports = {
 		.addBooleanOption((o) => o.setName('pfc2').setDescription('Did Player 2 PFC?')),
 
 	async execute(interaction) {
+		if (!await requireReferee(interaction)) return;
+
 		const state = getMatchState();
 
 		if (!state) {

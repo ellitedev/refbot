@@ -2,6 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { createEvent, switchEvent, listEvents, getActiveEvent } = require('../../state/event.js');
 const { loadMapPoolFromDB } = require('../../state/mapPool.js');
 const { loadGeneratedPoolsFromDB } = require('../../state/generatedPools.js');
+const { requireReferee } = require('../../util/requireReferee.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -31,6 +32,8 @@ module.exports = {
 		),
 
 	async execute(interaction) {
+		if (!await requireReferee(interaction)) return;
+
 		const sub = interaction.options.getSubcommand();
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 

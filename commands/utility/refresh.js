@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { fetchMapPool } = require('../../state/mapPool.js');
+const { requireReferee } = require('../../util/requireReferee.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -10,6 +11,8 @@ module.exports = {
 		),
 
 	async execute(interaction) {
+		if (!await requireReferee(interaction)) return;
+
 		const url = interaction.options.getString('url');
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 

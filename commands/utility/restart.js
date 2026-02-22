@@ -13,6 +13,7 @@ const {
 } = require('../../ui/matchContainers.js');
 const { startPickPhase } = require('../../util/matchFlow.js');
 const { broadcastMatchState } = require('../../util/broadcastMatch.js');
+const { requireReferee } = require('../../util/requireReferee.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -50,6 +51,8 @@ module.exports = {
 	},
 
 	async execute(interaction) {
+		if (!await requireReferee(interaction)) return;
+
 		const event = getActiveEvent();
 		if (!event) {
 			await interaction.reply({ content: '❌ No active event!', flags: MessageFlags.Ephemeral });

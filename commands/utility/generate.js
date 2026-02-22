@@ -5,6 +5,7 @@ const { getPool } = require('../../state/mapPool.js');
 const { generatePools } = require('../../state/poolGenerator.js');
 const { setGeneratedPools } = require('../../state/generatedPools.js');
 const { getActiveEvent } = require('../../state/event.js');
+const { requireReferee } = require('../../util/requireReferee.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -12,6 +13,8 @@ module.exports = {
 		.setDescription('Generate all match pools for the tournament.'),
 
 	async execute(interaction) {
+		if (!await requireReferee(interaction)) return;
+
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
 		const event = getActiveEvent();

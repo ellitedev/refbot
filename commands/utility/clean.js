@@ -4,6 +4,7 @@ const { getActiveEvent } = require('../../state/event.js');
 const MatchModel = require('../../models/Match.js');
 const { getSimpleContainer } = require('../../ui/matchContainers.js');
 const { ContainerBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { requireReferee } = require('../../util/requireReferee.js');
 
 const accentColor = 0x40ffa0;
 
@@ -31,6 +32,8 @@ module.exports = {
 		.setDescription('Clean up stuck or abandoned matches.'),
 
 	async execute(interaction) {
+		if (!await requireReferee(interaction)) return;
+
 		const event = getActiveEvent();
 		if (!event) {
 			await interaction.reply({ content: '❌ No active event!', flags: MessageFlags.Ephemeral });
