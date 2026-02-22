@@ -16,6 +16,8 @@ A Discord bot to help referees manage matches more easily!
 DISCORD_TOKEN=tokenhere
 CLIENT_ID=discordbotapplicationidhere
 GUILD_ID=serveridhere
+MONGODB_URI=mongodb://USERNAME:PASSWORD@URL:PORT
+WS_PORT=websocketporthere
 ```
 
 ### Running
@@ -29,6 +31,13 @@ GUILD_ID=serveridhere
   - referee approval
   - random ban order selection
   - alternating ban phase until one map remains
+  - album art display on ready checks
+- **/restart** — restarts a previously completed match with the same map pool
+- **/result** — submits the result of the current chart
+- **/clean** — cleans up stuck or abandoned matches
+- **/refresh** — fetches the map pool from a Google Sheets URL and caches SpinShare chart data
+- **/generate** — generates all match pools for the tournament
+- **/event** — creates, switches, and lists events
 - **/ping** — replies with Pong!
 - **/server** — displays server info
 - **/user** — displays user info
@@ -38,7 +47,9 @@ In no order:
 - [x] Handle pick/ban cycle
 - [x] Mappool generation/management
 - [x] Ready checks
-- [ ] MongoDB match state persistence
-- [ ] Save mappool in MongoDB
+- [x] MongoDB match state persistence
+- [x] Save mappool in MongoDB
+- [x] WebSocket match reporting
+- [x] SpinShare chart metadata + album art
+- [x] Match history and restart support
 - [ ] start.gg match reporting
-- [ ] Websocket match reporting
