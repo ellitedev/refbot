@@ -31,16 +31,13 @@ WS_PORT=websocketporthere
   - referee approval
   - random ban order selection
   - alternating ban phase until one map remains
-  - album art display on ready checks
 - **/restart** — restarts a previously completed match with the same map pool
 - **/result** — submits the result of the current chart
 - **/clean** — cleans up stuck or abandoned matches
 - **/refresh** — fetches the map pool from a Google Sheets URL and caches SpinShare chart data
-- **/generate** — generates all match pools for the tournament
+- **/generate** — generates all match pools for the tournament (maybe integrate this into `/refresh` instead?)
 - **/event** — creates, switches, and lists events
-- **/ping** — replies with Pong!
-- **/server** — displays server info
-- **/user** — displays user info
+- **/ping** — replies with "Pong!" and how long the command took to execute.
 
 ## TO-DO
 In no order:
