@@ -55,3 +55,4 @@ In no order:
 - [ ] start.gg match reporting
 - [ ] Support for friendly's, outside of tournament play. (This means we need to be able to run concurrent matches)
 - [ ] Permission checks, only people with a certain role should be allowed to run certain events and commands, might need a complete re-write.
+- [ ] Simulate rolls because it's silly and fun! Should be interactive for the players
