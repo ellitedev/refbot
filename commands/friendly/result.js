@@ -1,8 +1,8 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { getMatchState, recordChartResult, completeMatch, saveMatchState } = require('../../state/match.js');
-const { getPickContainer, getWinnerContainer } = require('../../ui/matchContainers.js');
-const { startPickPhase } = require('../../util/matchFlow.js');
-const { broadcastMatchState } = require('../../util/broadcastMatch.js');
+const { SlashCommandBuilder, MessageFlags, ContainerBuilder } = require('discord.js');
+const { getFriendlyState, saveFriendlyState, recordFriendlyChartResult, completeFriendlyMatch } = require('../../state/friendlyMatch.js');
+const { runPickPhase } = require('../../util/friendlyMatchFlow.js');
+
+const accentColor = 0x40ffa0;
 
 function fcLabel(score, fc, pfc) {
 	if (pfc) return `${score} [PFC]`;
@@ -12,8 +12,8 @@ function fcLabel(score, fc, pfc) {
 
 module.exports = {
 	data: new SlashCommandBuilder()
-		.setName('result')
-		.setDescription('Submit the result of the current chart.')
+		.setName('friendly-result')
+		.setDescription('Submit the result of the current chart in your friendly match.')
 		.addIntegerOption((o) => o.setName('score1').setDescription('Score for Player 1').setRequired(true))
 		.addIntegerOption((o) => o.setName('score2').setDescription('Score for Player 2').setRequired(true))
 		.addBooleanOption((o) => o.setName('fc1').setDescription('Did Player 1 FC?').setRequired(true))
@@ -22,15 +22,22 @@ module.exports = {
 		.addBooleanOption((o) => o.setName('pfc2').setDescription('Did Player 2 PFC?')),
 
 	async execute(interaction) {
-		const state = getMatchState();
+		const refUserId = interaction.user.id;
+		const state = getFriendlyState(refUserId);
 
 		if (!state) {
-			await interaction.reply({ content: 'No match is currently in progress.', flags: MessageFlags.Ephemeral });
+			await interaction.reply({
+				content: '❌ You have no active friendly match. Use `/friendly start` to begin one.',
+				flags: MessageFlags.Ephemeral,
+			});
 			return;
 		}
 
 		if (!state.currentChart) {
-			await interaction.reply({ content: 'No chart is currently being played.', flags: MessageFlags.Ephemeral });
+			await interaction.reply({
+				content: '❌ No chart is currently being played.',
+				flags: MessageFlags.Ephemeral,
+			});
 			return;
 		}
 
@@ -42,7 +49,6 @@ module.exports = {
 		const pfc2 = interaction.options.getBoolean('pfc2') ?? false;
 
 		const p1Won = score1 > score2;
-		const winner = p1Won ? state.player1 : state.player2;
 		const winnerName = p1Won ? state.playerNames[0] : state.playerNames[1];
 
 		if (p1Won) state.score[0]++;
@@ -53,27 +59,7 @@ module.exports = {
 		state.playedCharts.push(chart);
 		state.currentMapPool = state.fullMapPool.filter((m) => !state.playedCharts.includes(m));
 
-		await recordChartResult({
-			chart,
-			score1,
-			score2,
-			fc1,
-			fc2,
-			pfc1,
-			pfc2,
-			winner: winnerName,
-		});
-
-		await broadcastMatchState('match.chartResult', state, {
-			chart,
-			score1,
-			score2,
-			fc1,
-			fc2,
-			pfc1,
-			pfc2,
-			winner: winnerName,
-		});
+		await recordFriendlyChartResult(refUserId, { chart, score1, score2, fc1, fc2, pfc1, pfc2, winner: winnerName });
 
 		const scoreStr = [
 			'```',
@@ -93,27 +79,23 @@ module.exports = {
 		await interaction.reply({ content: scoreStr, flags: MessageFlags.Ephemeral });
 
 		if (matchOver) {
-			await broadcastMatchState('match.end', state, { winner: winnerName });
-			await completeMatch(winnerName);
-			await state.interaction.editReply({
-				content: '',
-				components: [getWinnerContainer(winner, state.score, state.playerNames, state.bestOf)],
+			await completeFriendlyMatch(refUserId, winnerName);
+			await state.publicMessage.edit({
+				components: [
+					new ContainerBuilder()
+						.setAccentColor(accentColor)
+						.addTextDisplayComponents((t) => t.setContent(`## 🏆 ${winnerName} wins the friendly!`))
+						.addTextDisplayComponents((t) =>
+							t.setContent(`**Final Score:** ${state.playerNames[0]} ${state.score[0]} - ${state.score[1]} ${state.playerNames[1]} *(Best of ${state.bestOf})*`),
+						),
+				],
 				flags: MessageFlags.IsComponentsV2,
 			});
 			return;
 		}
 
-		state.currentPicker = winner;
-		await saveMatchState();
-		await broadcastMatchState('match.pick', state);
-
-		await state.interaction.editReply({
-			content: '',
-			components: [getPickContainer(winner, state.currentMapPool, state.score, state.playerNames, state.bestOf)],
-			flags: MessageFlags.IsComponentsV2,
-		});
-
-		const pickMessage = await state.interaction.fetchReply();
-		startPickPhase(state.interaction, pickMessage, state);
+		state.currentPicker = winnerName;
+		await saveFriendlyState(refUserId);
+		await runPickPhase(state);
 	},
 };

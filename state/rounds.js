@@ -1,3 +1,4 @@
+/* eslint-disable no-multi-spaces */
 const ROUNDS = [
 	{ name: 'Qualifiers – Winners 1',             bestOf: 3, tier: 1, bracket: 'Qualifiers', round: 'Winners 1' },
 	{ name: 'Qualifiers – Winners 2',             bestOf: 3, tier: 2, bracket: 'Qualifiers', round: 'Winners 2' },

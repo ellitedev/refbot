@@ -1,4 +1,4 @@
-const { MessageFlags, ComponentType, ContainerBuilder } = require('discord.js');
+const { MessageFlags, ComponentType } = require('discord.js');
 const { getMatchPool } = require('../state/generatedPools.js');
 const { getRound } = require('../state/rounds.js');
 const {
@@ -85,8 +85,8 @@ async function resumeMatch(client, doc, matchStateRef) {
 			});
 
 			readyCol.on('collect', async (j) => {
-				if (j.user.id === player1.id && !p1Ready) p1Ready = true;
-				else if (j.user.id === player2.id && !p2Ready) p2Ready = true;
+				if (j.user.id === player1.id && !p1Ready) { p1Ready = true; }
+				else if (j.user.id === player2.id && !p2Ready) { p2Ready = true; }
 				else {
 					await j.reply({ content: 'You\'re already ready!', flags: MessageFlags.Ephemeral });
 					return;

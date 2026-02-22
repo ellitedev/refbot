@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { fetchMapPool, getCacheInfo } = require('../../state/mapPool.js');
+const { fetchMapPool } = require('../../state/mapPool.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()

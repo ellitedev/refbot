@@ -53,8 +53,7 @@ function getMatchPool(bracketName, roundName, matchIndex) {
 	const round = bracket.rounds.find((r) => r.name === roundName);
 	if (!round) throw new Error(`Round "${roundName}" not found in bracket "${bracketName}".`);
 
-	if (matchIndex < 0 || matchIndex >= round.matches.length)
-		throw new Error(`Match index ${matchIndex} out of range (${round.matches.length} matches in this round).`);
+	if (matchIndex < 0 || matchIndex >= round.matches.length) { throw new Error(`Match index ${matchIndex} out of range (${round.matches.length} matches in this round).`); }
 
 	const match = round.matches[matchIndex];
 	const charts = Array.isArray(match) ? match : match.charts;

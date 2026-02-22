@@ -18,6 +18,11 @@ async function startReadyCheck(interaction, chart, state) {
 	let p1Ready = false;
 	let p2Ready = false;
 
+	if (state._activeCollector) {
+		state._activeCollector.stop();
+		state._activeCollector = null;
+	}
+
 	const coverUrl = await getCoverUrl(chart);
 
 	const readyMsg = await interaction.editReply({
@@ -25,23 +30,36 @@ async function startReadyCheck(interaction, chart, state) {
 		flags: MessageFlags.IsComponentsV2,
 	});
 
+	const readied = new Set();
+
 	const readyCol = readyMsg.createMessageComponentCollector({
 		componentType: ComponentType.Button,
-		filter: (j) => j.user.id === state.player1.id || j.user.id === state.player2.id,
+		filter: (j) => j.customId === 'ready',
+		max: 2,
 	});
 
+	state._activeCollector = readyCol;
+
 	readyCol.on('collect', async (j) => {
-		if (j.user.id === state.player1.id && !p1Ready) p1Ready = true;
-		else if (j.user.id === state.player2.id && !p2Ready) p2Ready = true;
-		else {
+		if (j.user.id !== state.player1.id && j.user.id !== state.player2.id) {
+			await j.reply({ content: 'You are not a player in this match!', flags: MessageFlags.Ephemeral });
+			return;
+		}
+
+		if (readied.has(j.user.id)) {
 			await j.reply({ content: 'You\'re already ready!', flags: MessageFlags.Ephemeral });
 			return;
 		}
 
+		readied.add(j.user.id);
 		await j.deferUpdate();
+
+		if (j.user.id === state.player1.id) p1Ready = true;
+		else p2Ready = true;
 
 		if (p1Ready && p2Ready) {
 			readyCol.stop();
+			state._activeCollector = null;
 			state.currentChart = chart;
 			await broadcastMatchState('match.chartStart', state);
 			await interaction.editReply({
@@ -60,6 +78,11 @@ async function startReadyCheck(interaction, chart, state) {
 }
 
 async function startPickPhase(interaction, message, state) {
+	if (state._activeCollector) {
+		state._activeCollector.stop();
+		state._activeCollector = null;
+	}
+
 	if (state.currentMapPool.length === 1) {
 		const chart = state.currentMapPool[0];
 		state.currentChart = chart;
@@ -71,7 +94,10 @@ async function startPickPhase(interaction, message, state) {
 	const pickCol = message.createMessageComponentCollector({
 		componentType: ComponentType.StringSelect,
 		filter: (i) => i.customId === 'mapSelect',
+		max: 1,
 	});
+
+	state._activeCollector = pickCol;
 
 	pickCol.on('collect', async (i) => {
 		if (i.user.id !== state.currentPicker.id) {
@@ -84,6 +110,7 @@ async function startPickPhase(interaction, message, state) {
 		state.currentChart = picked;
 		await broadcastMatchState('match.pick', state);
 		pickCol.stop();
+		state._activeCollector = null;
 
 		await startReadyCheck(interaction, picked, state);
 	});

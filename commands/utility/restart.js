@@ -171,6 +171,7 @@ module.exports = {
 				const firstBanner = j.customId === 'first' ? randomPlayer : otherPlayer;
 				const secondBanner = firstBanner === randomPlayer ? otherPlayer : randomPlayer;
 				const numBans = mapPool.length - 1;
+				// eslint-disable-next-line no-shadow
 				const banOrder = Array.from({ length: numBans }, (_, i) => (i % 2 === 0 ? firstBanner : secondBanner));
 				let currentMapPool = [...mapPool];
 				let banTurn = 0;
