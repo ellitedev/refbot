@@ -23,7 +23,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: registry.ellite.dev
-          username: ellite
+          username: refbot
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build and push
