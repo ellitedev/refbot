@@ -2,6 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Client, Events, GatewayIntentBits, MessageFlags, Collection } = require('discord.js');
 require('dotenv').config({ quiet: true });
+
+const BOT_TOKEN = process.env.NODE_ENV === 'development'
+	? (process.env.TEST_TOKEN || process.env.DISCORD_TOKEN)
+	: process.env.DISCORD_TOKEN;
+// eslint-disable-next-line no-unused-vars
+const APP_CLIENT_ID = process.env.NODE_ENV === 'development'
+	? (process.env.TEST_ID || process.env.CLIENT_ID)
+	: process.env.CLIENT_ID;
 const { connectDB } = require('./state/db.js');
 const { loadActiveEvent, getActiveEvent } = require('./state/event.js');
 const { loadMapPoolFromDB } = require('./state/mapPool.js');
@@ -40,7 +48,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 	}
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(BOT_TOKEN);
 
 client.commands = new Collection();
 
