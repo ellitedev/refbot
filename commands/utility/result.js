@@ -106,13 +106,15 @@ module.exports = {
 			return;
 		}
 
-		state.currentPicker = winner;
+		const loser = p1Won ? state.player2 : state.player1;
+
+		state.currentPicker = loser;
 		await saveMatchState();
 		await broadcastMatchState('match.pick', state);
 
 		await state.interaction.editReply({
 			content: '',
-			components: [getPickContainer(winner, state.currentMapPool, state.score, state.playerNames, state.bestOf)],
+			components: [getPickContainer(loser, state.currentMapPool, state.score, state.playerNames, state.bestOf)],
 			flags: MessageFlags.IsComponentsV2,
 		});
 

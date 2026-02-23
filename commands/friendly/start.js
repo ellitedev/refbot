@@ -525,7 +525,9 @@ module.exports = {
 				return;
 			}
 
-			state.currentPicker = winnerName;
+			const loserName = p1Won ? state.playerNames[1] : state.playerNames[0];
+
+			state.currentPicker = loserName;
 			await saveFriendlyState(refUserId);
 			await runPickPhase(state);
 		}
