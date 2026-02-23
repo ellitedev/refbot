@@ -55,3 +55,6 @@ In no order:
 - [ ] start.gg match reporting
 - [ ] fetch event data from start.gg, rather than using brackets.json and hardcoding things
 - [ ] Simulate rolls because it's silly and fun! Should be interactive for the players
+- [ ] Add a way to revert the last step (for example if someone reported incorrect scores)
+- [ ] Make it more obvious who is "score1" and who is "score2"
+- [ ] Player stat tracking? (Use discord account ID?)
