@@ -34,7 +34,8 @@ module.exports = {
 						const j = sub.toJSON();
 						lines.push(`\`/${cmd.name} ${j.name}\` - ${j.description}`);
 					}
-				} else {
+				}
+				else {
 					lines.push(`\`/${cmd.name}\` - ${cmd.description}`);
 				}
 			}
