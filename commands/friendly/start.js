@@ -13,9 +13,10 @@ const {
 	StringSelectMenuBuilder,
 	StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { getFriendlyState, initFriendlyMatch, saveFriendlyState } = require('../../state/friendlyMatch.js');
+const { getFriendlyState, initFriendlyMatch, saveFriendlyState, recordFriendlyChartResult, completeFriendlyMatch, clearFriendlyState } = require('../../state/friendlyMatch.js');
 const { extractSongId, fetchAndCacheChart } = require('../../state/spinshare.js');
-const { startFriendlyPickPhase } = require('../../util/friendlyMatchFlow.js');
+const { startFriendlyPickPhase, runPickPhase } = require('../../util/friendlyMatchFlow.js');
+const MatchModel = require('../../models/Match.js');
 
 const accentColor = 0x40ffa0;
 
@@ -166,6 +167,12 @@ async function collectUrls(interaction, totalCharts) {
 	return allUrls;
 }
 
+function fcLabel(score, fc, pfc) {
+	if (pfc) return `${score} [PFC]`;
+	if (fc) return `${score} [FC]`;
+	return `${score}`;
+}
+
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('friendly')
@@ -187,249 +194,365 @@ module.exports = {
 						),
 				)
 				.addBooleanOption((o) => o.setName('bans').setDescription('Should players ban charts? (1 ban each)').setRequired(true)),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName('result')
+				.setDescription('Submit the result of the current chart in your friendly match.')
+				.addIntegerOption((o) => o.setName('score1').setDescription('Score for Player 1').setRequired(true))
+				.addIntegerOption((o) => o.setName('score2').setDescription('Score for Player 2').setRequired(true))
+				.addBooleanOption((o) => o.setName('fc1').setDescription('Did Player 1 FC?').setRequired(true))
+				.addBooleanOption((o) => o.setName('fc2').setDescription('Did Player 2 FC?').setRequired(true))
+				.addBooleanOption((o) => o.setName('pfc1').setDescription('Did Player 1 PFC?'))
+				.addBooleanOption((o) => o.setName('pfc2').setDescription('Did Player 2 PFC?')),
+		)
+		.addSubcommand((sub) =>
+			sub
+				.setName('end')
+				.setDescription('Force-end your active friendly match.'),
 		),
 
 	async execute(interaction) {
-		if (!interaction.options.getSubcommand || interaction.options.getSubcommand() !== 'start') return;
-
+		const sub = interaction.options.getSubcommand();
 		const refUserId = interaction.user.id;
 
-		if (getFriendlyState(refUserId)) {
+		if (sub === 'start') {
+			if (getFriendlyState(refUserId)) {
+				await interaction.reply({
+					content: '❌ You already have an active friendly match! Use `/friendly end` to cancel it first.',
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const p1Name = interaction.options.getString('player1');
+			const p2Name = interaction.options.getString('player2');
+			const bestOf = interaction.options.getInteger('best_of');
+			const hasBans = interaction.options.getBoolean('bans');
+			const chartCount = hasBans ? bestOf + 2 : bestOf;
+
 			await interaction.reply({
-				content: '❌ You already have an active friendly match! Use `/friendly-end` to cancel it first.',
-				flags: MessageFlags.Ephemeral,
-			});
-			return;
-		}
-
-		const p1Name = interaction.options.getString('player1');
-		const p2Name = interaction.options.getString('player2');
-		const bestOf = interaction.options.getInteger('best_of');
-		const hasBans = interaction.options.getBoolean('bans');
-		const chartCount = hasBans ? bestOf + 2 : bestOf;
-
-		// --- ephemeral URL setup phase (ref only) ---
-		await interaction.reply({
-			components: [getSetupContainer(p1Name, p2Name, bestOf, hasBans, chartCount)],
-			flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
-			withResponse: true,
-		});
-
-		let charts = null;
-
-		while (!charts) {
-			let rawUrls;
-			try {
-				rawUrls = await collectUrls(interaction, chartCount);
-			}
-			catch {
-				await interaction.editReply({
-					components: [
-						new ContainerBuilder()
-							.setAccentColor(accentColor)
-							.addTextDisplayComponents((t) => t.setContent('❌ Timed out waiting for URLs. Please run `/friendly start` again.')),
-					],
-					flags: MessageFlags.IsComponentsV2,
-				});
-				return;
-			}
-
-			await interaction.editReply({
-				components: [
-					new ContainerBuilder()
-						.setAccentColor(accentColor)
-						.addTextDisplayComponents((t) => t.setContent('Fetching chart data from SpinShare...')),
-				],
-				flags: MessageFlags.IsComponentsV2,
-			});
-
-			const fetched = [];
-			const failed = [];
-			for (const url of rawUrls) {
-				const songId = extractSongId(url);
-				if (!songId) { failed.push(url); continue; }
-				const chart = await fetchAndCacheChart(songId, null);
-				if (!chart) { failed.push(url); continue; }
-				fetched.push(chart);
-			}
-
-			if (failed.length > 0) {
-				const failList = failed.map((u) => `- \`${u}\``).join('\n');
-				await interaction.editReply({
-					components: [
-						new ContainerBuilder()
-							.setAccentColor(accentColor)
-							.addTextDisplayComponents((t) =>
-								t.setContent(`❌ Could not fetch the following URLs:\n${failList}\n\nPlease check them and try again.`),
-							)
-							.addActionRowComponents((row) =>
-								row.setComponents(
-									new ButtonBuilder().setCustomId('enter_urls').setLabel('Re-enter Chart URLs').setStyle(ButtonStyle.Primary),
-								),
-							),
-					],
-					flags: MessageFlags.IsComponentsV2,
-				});
-				continue;
-			}
-
-			await interaction.editReply({
-				components: [getChartConfirmContainer(fetched, p1Name, p2Name, bestOf, hasBans)],
-				flags: MessageFlags.IsComponentsV2,
-			});
-
-			const confirmMsg = await interaction.fetchReply();
-			let confirmInteraction;
-			try {
-				confirmInteraction = await confirmMsg.awaitMessageComponent({
-					componentType: ComponentType.Button,
-					filter: (i) => i.user.id === interaction.user.id,
-					time: 120_000,
-				});
-			}
-			catch {
-				await interaction.editReply({
-					components: [
-						new ContainerBuilder()
-							.setAccentColor(accentColor)
-							.addTextDisplayComponents((t) => t.setContent('❌ Timed out. Please run `/friendly start` again.')),
-					],
-					flags: MessageFlags.IsComponentsV2,
-				});
-				return;
-			}
-
-			await confirmInteraction.deferUpdate();
-
-			if (confirmInteraction.customId === 'confirm_pool') {
-				charts = fetched;
-				const chartList = charts.map((c, i) => `**${i + 1}.** ${c.title} - ${c.charter}`).join('\n');
-				await interaction.editReply({
-					components: [
-						new ContainerBuilder()
-							.setAccentColor(accentColor)
-							.addTextDisplayComponents((t) =>
-								t.setContent(`## Friendly: ${p1Name} vs ${p2Name}\n**Best of:** ${bestOf} | **Bans:** ${hasBans ? 'Yes (1 each)' : 'No'}`),
-							)
-							.addSeparatorComponents((s) => s)
-							.addTextDisplayComponents((t) => t.setContent(`**Confirmed map pool:**\n${chartList}`))
-							.addSeparatorComponents((s) => s)
-							.addTextDisplayComponents((t) => t.setContent('Map pool confirmed! Starting check-in...')),
-					],
-					flags: MessageFlags.IsComponentsV2,
-				});
-			}
-			else {
-				await interaction.editReply({
-					components: [getSetupContainer(p1Name, p2Name, bestOf, hasBans, chartCount)],
-					flags: MessageFlags.IsComponentsV2,
-				});
-			}
-		}
-
-		// build songId lookup keyed by display name for cover art
-		const mapPool = charts.map((c) => `${c.title} - ${c.charter}`);
-		const chartSongIds = Object.fromEntries(charts.map((c) => [`${c.title} - ${c.charter}`, c.songId]));
-
-		// --- public check-in phase ---
-		let checkedIn = false;
-		while (!checkedIn) {
-			const publicResponse = await interaction.followUp({
-				components: [getCheckInContainer(p1Name, p2Name)],
-				flags: MessageFlags.IsComponentsV2,
-				withResponse: true,
-			});
-
-			let p1User = null;
-			let p2User = null;
-
-			await new Promise((resolve) => {
-				const col = publicResponse.createMessageComponentCollector({
-					componentType: ComponentType.StringSelect,
-					filter: (i) => i.customId === 'friendly_checkin',
-				});
-
-				col.on('collect', async (i) => {
-					const slot = i.values[0];
-
-					if (process.env.NODE_ENV !== 'development') {
-						if ((slot === 'p1' && p1User?.id === i.user.id) || (slot === 'p2' && p2User?.id === i.user.id)) {
-							await i.reply({ content: 'You have already checked in!', flags: MessageFlags.Ephemeral });
-							return;
-						}
-						if ((slot === 'p1' && p2User?.id === i.user.id) || (slot === 'p2' && p1User?.id === i.user.id)) {
-							await i.reply({ content: 'You have already checked in as the other player!', flags: MessageFlags.Ephemeral });
-							return;
-						}
-					}
-
-					if (slot === 'p1' && !p1User) {
-						p1User = i.user;
-						await i.reply({ content: `You have checked in as **${p1Name}**.`, flags: MessageFlags.Ephemeral });
-					}
-					else if (slot === 'p2' && !p2User) {
-						p2User = i.user;
-						await i.reply({ content: `You have checked in as **${p2Name}**.`, flags: MessageFlags.Ephemeral });
-					}
-					else {
-						await i.reply({ content: 'That slot is already taken!', flags: MessageFlags.Ephemeral });
-						return;
-					}
-
-					if (!p1User || !p2User) return;
-					col.stop();
-					resolve();
-				});
-			});
-
-			const approvalMsg = await interaction.followUp({
-				components: [getRefApprovalContainer(p1User, p2User, p1Name, p2Name)],
+				components: [getSetupContainer(p1Name, p2Name, bestOf, hasBans, chartCount)],
 				flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
 				withResponse: true,
 			});
 
-			let approvalConf;
-			try {
-				approvalConf = await approvalMsg.awaitMessageComponent({
-					filter: (i) => i.user.id === refUserId,
-					time: 120_000,
+			let charts = null;
+
+			while (!charts) {
+				let rawUrls;
+				try {
+					rawUrls = await collectUrls(interaction, chartCount);
+				}
+				catch {
+					await interaction.editReply({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((t) => t.setContent('❌ Timed out waiting for URLs. Please run `/friendly start` again.')),
+						],
+						flags: MessageFlags.IsComponentsV2,
+					});
+					return;
+				}
+
+				await interaction.editReply({
+					components: [
+						new ContainerBuilder()
+							.setAccentColor(accentColor)
+							.addTextDisplayComponents((t) => t.setContent('Fetching chart data from SpinShare...')),
+					],
+					flags: MessageFlags.IsComponentsV2,
 				});
-			}
-			catch {
-				await interaction.followUp({ content: '❌ Ref approval timed out. Please run `/friendly start` again.', flags: MessageFlags.Ephemeral });
-				return;
+
+				const fetched = [];
+				const failed = [];
+				for (const url of rawUrls) {
+					const songId = extractSongId(url);
+					if (!songId) { failed.push(url); continue; }
+					const chart = await fetchAndCacheChart(songId, null);
+					if (!chart) { failed.push(url); continue; }
+					fetched.push(chart);
+				}
+
+				if (failed.length > 0) {
+					const failList = failed.map((u) => `- \`${u}\``).join('\n');
+					await interaction.editReply({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((t) =>
+									t.setContent(`❌ Could not fetch the following URLs:\n${failList}\n\nPlease check them and try again.`),
+								)
+								.addActionRowComponents((row) =>
+									row.setComponents(
+										new ButtonBuilder().setCustomId('enter_urls').setLabel('Re-enter Chart URLs').setStyle(ButtonStyle.Primary),
+									),
+								),
+						],
+						flags: MessageFlags.IsComponentsV2,
+					});
+					continue;
+				}
+
+				await interaction.editReply({
+					components: [getChartConfirmContainer(fetched, p1Name, p2Name, bestOf, hasBans)],
+					flags: MessageFlags.IsComponentsV2,
+				});
+
+				const confirmMsg = await interaction.fetchReply();
+				let confirmInteraction;
+				try {
+					confirmInteraction = await confirmMsg.awaitMessageComponent({
+						componentType: ComponentType.Button,
+						filter: (i) => i.user.id === interaction.user.id,
+						time: 120_000,
+					});
+				}
+				catch {
+					await interaction.editReply({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((t) => t.setContent('❌ Timed out. Please run `/friendly start` again.')),
+						],
+						flags: MessageFlags.IsComponentsV2,
+					});
+					return;
+				}
+
+				await confirmInteraction.deferUpdate();
+
+				if (confirmInteraction.customId === 'confirm_pool') {
+					charts = fetched;
+					const chartList = charts.map((c, i) => `**${i + 1}.** ${c.title} - ${c.charter}`).join('\n');
+					await interaction.editReply({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((t) =>
+									t.setContent(`## Friendly: ${p1Name} vs ${p2Name}\n**Best of:** ${bestOf} | **Bans:** ${hasBans ? 'Yes (1 each)' : 'No'}`),
+								)
+								.addSeparatorComponents((s) => s)
+								.addTextDisplayComponents((t) => t.setContent(`**Confirmed map pool:**\n${chartList}`))
+								.addSeparatorComponents((s) => s)
+								.addTextDisplayComponents((t) => t.setContent('Map pool confirmed! Starting check-in...')),
+						],
+						flags: MessageFlags.IsComponentsV2,
+					});
+				}
+				else {
+					await interaction.editReply({
+						components: [getSetupContainer(p1Name, p2Name, bestOf, hasBans, chartCount)],
+						flags: MessageFlags.IsComponentsV2,
+					});
+				}
 			}
 
-			if (approvalConf.customId === 'friendly_reject') {
+			const mapPool = charts.map((c) => `${c.title} - ${c.charter}`);
+			const chartSongIds = Object.fromEntries(charts.map((c) => [`${c.title} - ${c.charter}`, c.songId]));
+
+			let checkedIn = false;
+			while (!checkedIn) {
+				const publicResponse = await interaction.followUp({
+					components: [getCheckInContainer(p1Name, p2Name)],
+					flags: MessageFlags.IsComponentsV2,
+					withResponse: true,
+				});
+
+				let p1User = null;
+				let p2User = null;
+
+				await new Promise((resolve) => {
+					const col = publicResponse.createMessageComponentCollector({
+						componentType: ComponentType.StringSelect,
+						filter: (i) => i.customId === 'friendly_checkin',
+					});
+
+					col.on('collect', async (i) => {
+						const slot = i.values[0];
+
+						if (process.env.NODE_ENV !== 'development') {
+							if ((slot === 'p1' && p1User?.id === i.user.id) || (slot === 'p2' && p2User?.id === i.user.id)) {
+								await i.reply({ content: 'You have already checked in!', flags: MessageFlags.Ephemeral });
+								return;
+							}
+							if ((slot === 'p1' && p2User?.id === i.user.id) || (slot === 'p2' && p1User?.id === i.user.id)) {
+								await i.reply({ content: 'You have already checked in as the other player!', flags: MessageFlags.Ephemeral });
+								return;
+							}
+						}
+
+						if (slot === 'p1' && !p1User) {
+							p1User = i.user;
+							await i.reply({ content: `You have checked in as **${p1Name}**.`, flags: MessageFlags.Ephemeral });
+						}
+						else if (slot === 'p2' && !p2User) {
+							p2User = i.user;
+							await i.reply({ content: `You have checked in as **${p2Name}**.`, flags: MessageFlags.Ephemeral });
+						}
+						else {
+							await i.reply({ content: 'That slot is already taken!', flags: MessageFlags.Ephemeral });
+							return;
+						}
+
+						if (!p1User || !p2User) return;
+						col.stop();
+						resolve();
+					});
+				});
+
+				const approvalMsg = await interaction.followUp({
+					components: [getRefApprovalContainer(p1User, p2User, p1Name, p2Name)],
+					flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
+					withResponse: true,
+				});
+
+				let approvalConf;
+				try {
+					approvalConf = await approvalMsg.awaitMessageComponent({
+						filter: (i) => i.user.id === refUserId,
+						time: 120_000,
+					});
+				}
+				catch {
+					await interaction.followUp({ content: '❌ Ref approval timed out. Please run `/friendly start` again.', flags: MessageFlags.Ephemeral });
+					return;
+				}
+
+				if (approvalConf.customId === 'friendly_reject') {
+					await approvalConf.update({
+						components: [
+							new ContainerBuilder()
+								.setAccentColor(accentColor)
+								.addTextDisplayComponents((t) => t.setContent('❌ Rejected. Restarting check-in...')),
+						],
+						flags: MessageFlags.IsComponentsV2,
+					});
+					continue;
+				}
+
 				await approvalConf.update({
 					components: [
 						new ContainerBuilder()
 							.setAccentColor(accentColor)
-							.addTextDisplayComponents((t) => t.setContent('❌ Rejected. Restarting check-in...')),
+							.addTextDisplayComponents((t) => t.setContent('✅ Approved! Starting match...')),
 					],
 					flags: MessageFlags.IsComponentsV2,
 				});
-				continue;
+
+				const state = await initFriendlyMatch(refUserId, p1Name, p2Name, bestOf, mapPool, interaction);
+				state.hasBans = hasBans;
+				state.chartSongIds = chartSongIds;
+				state.player1User = p1User;
+				state.player2User = p2User;
+
+				await saveFriendlyState(refUserId);
+				checkedIn = true;
+				await startFriendlyPickPhase(interaction, state);
+			}
+		}
+
+		else if (sub === 'result') {
+			const state = getFriendlyState(refUserId);
+
+			if (!state) {
+				await interaction.reply({
+					content: '❌ You have no active friendly match. Use `/friendly start` to begin one.',
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
 			}
 
-			await approvalConf.update({
-				components: [
-					new ContainerBuilder()
-						.setAccentColor(accentColor)
-						.addTextDisplayComponents((t) => t.setContent('✅ Approved! Starting match...')),
-				],
-				flags: MessageFlags.IsComponentsV2,
+			if (!state.currentChart) {
+				await interaction.reply({
+					content: '❌ No chart is currently being played.',
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			const score1 = interaction.options.getInteger('score1');
+			const score2 = interaction.options.getInteger('score2');
+			const fc1 = interaction.options.getBoolean('fc1');
+			const fc2 = interaction.options.getBoolean('fc2');
+			const pfc1 = interaction.options.getBoolean('pfc1') ?? false;
+			const pfc2 = interaction.options.getBoolean('pfc2') ?? false;
+
+			const p1Won = score1 > score2;
+			const winnerName = p1Won ? state.playerNames[0] : state.playerNames[1];
+
+			if (p1Won) state.score[0]++;
+			else state.score[1]++;
+
+			const chart = state.currentChart;
+			state.currentChart = null;
+			state.playedCharts.push(chart);
+			state.currentMapPool = state.fullMapPool.filter((m) => !state.playedCharts.includes(m));
+
+			await recordFriendlyChartResult(refUserId, { chart, score1, score2, fc1, fc2, pfc1, pfc2, winner: winnerName });
+
+			const scoreStr = [
+				'```',
+				`Chart Results: ${chart}`,
+				'',
+				`${state.playerNames[0]} | ${fcLabel(score1, fc1, pfc1)}`,
+				`${state.playerNames[1]} | ${fcLabel(score2, fc2, pfc2)}`,
+				`${winnerName} wins the chart!`,
+				'',
+				'Match score:',
+				`${state.playerNames[0]} | ${state.score[0]} - ${state.score[1]} | ${state.playerNames[1]}`,
+				'```',
+			].join('\n');
+
+			const matchOver = state.score[0] >= state.winsNeeded || state.score[1] >= state.winsNeeded;
+
+			await interaction.reply({ content: scoreStr, flags: MessageFlags.Ephemeral });
+
+			if (matchOver) {
+				await completeFriendlyMatch(refUserId, winnerName);
+				await state.publicMessage.edit({
+					components: [
+						new ContainerBuilder()
+							.setAccentColor(accentColor)
+							.addTextDisplayComponents((t) => t.setContent(`## 🏆 ${winnerName} wins the friendly!`))
+							.addTextDisplayComponents((t) =>
+								t.setContent(`**Final Score:** ${state.playerNames[0]} ${state.score[0]} - ${state.score[1]} ${state.playerNames[1]} *(Best of ${state.bestOf})*`),
+							),
+					],
+					flags: MessageFlags.IsComponentsV2,
+				});
+				return;
+			}
+
+			state.currentPicker = winnerName;
+			await saveFriendlyState(refUserId);
+			await runPickPhase(state);
+		}
+
+		else if (sub === 'end') {
+			const state = getFriendlyState(refUserId);
+
+			if (!state) {
+				await interaction.reply({
+					content: '❌ You have no active friendly match.',
+					flags: MessageFlags.Ephemeral,
+				});
+				return;
+			}
+
+			await MatchModel.findByIdAndUpdate(state._id, {
+				status: 'completed',
+				completedAt: new Date(),
+				winner: null,
 			});
 
-			const state = await initFriendlyMatch(refUserId, p1Name, p2Name, bestOf, mapPool, interaction);
-			state.hasBans = hasBans;
-			state.chartSongIds = chartSongIds;
-			state.player1User = p1User;
-			state.player2User = p2User;
+			clearFriendlyState(refUserId);
 
-			await saveFriendlyState(refUserId);
-			checkedIn = true;
-			await startFriendlyPickPhase(interaction, state);
+			await interaction.reply({
+				content: `✅ Friendly between **${state.playerNames[0]}** and **${state.playerNames[1]}** has been ended.`,
+				flags: MessageFlags.Ephemeral,
+			});
 		}
 	},
 };
