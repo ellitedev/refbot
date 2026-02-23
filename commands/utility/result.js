@@ -52,12 +52,19 @@ module.exports = {
 		else state.score[1]++;
 
 		const chart = state.currentChart;
+		const chartDisplayName = typeof chart === 'string' ? chart : chart.name;
+
 		state.currentChart = null;
 		state.playedCharts.push(chart);
-		state.currentMapPool = state.fullMapPool.filter((m) => !state.playedCharts.includes(m));
+
+		const playedNames = new Set(state.playedCharts.map((c) => (typeof c === 'string' ? c : c.name)));
+		state.currentMapPool = state.fullMapPool.filter((m) => {
+			const name = typeof m === 'string' ? m : m.name;
+			return !playedNames.has(name);
+		});
 
 		await recordChartResult({
-			chart,
+			chart: chartDisplayName,
 			score1,
 			score2,
 			fc1,
@@ -80,7 +87,7 @@ module.exports = {
 
 		const scoreStr = [
 			'```',
-			`Chart Results: ${chart}`,
+			`Chart Results: ${chartDisplayName}`,
 			'',
 			`${state.playerNames[0]} | ${fcLabel(score1, fc1, pfc1)}`,
 			`${state.playerNames[1]} | ${fcLabel(score2, fc2, pfc2)}`,

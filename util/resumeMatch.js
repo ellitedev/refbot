@@ -42,7 +42,8 @@ async function resumeMatch(client, doc, matchStateRef) {
 			return false;
 		}
 
-		const currentMapPool = fullMapPool.filter((m) => !doc.playedCharts.includes(m));
+		const playedNames = new Set(doc.playedCharts.map((c) => (typeof c === 'string' ? c : c.name)));
+		const currentMapPool = fullMapPool.filter((m) => !playedNames.has(m.name));
 
 		if (currentMapPool.length === 0) {
 			console.error('[resume] Current map pool resolved to 0 maps — match may already be complete.');

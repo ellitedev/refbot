@@ -4,13 +4,18 @@ const ChartModel = require('../models/Chart.js');
 
 const accentColor = 0x40ffa0;
 
-async function getCoverUrl(chartName, state) {
-	if (!chartName) return null;
+function chartName(entry) {
+	return typeof entry === 'string' ? entry : entry.name;
+}
+
+async function getCoverUrl(chart, state) {
+	const name = chartName(chart);
+	if (!name) return null;
 	try {
-		const songId = state?.chartSongIds?.[chartName] ?? null;
+		const songId = (typeof chart === 'object' ? chart.songId : null) ?? state?.chartSongIds?.[name] ?? null;
 		const doc = songId
 			? await ChartModel.findOne({ songId })
-			: await ChartModel.findOne({ csvName: chartName });
+			: await ChartModel.findOne({ csvName: name });
 		return doc?.cover ?? null;
 	}
 	catch {
@@ -23,8 +28,8 @@ function getScoreStr(state) {
 }
 
 function getBanContainer(banner, currentMapPool, state) {
-	const mapPoolStr = currentMapPool.map((m) => `- ${m}`).join('\n');
-	const options = currentMapPool.map((m) => new StringSelectMenuOptionBuilder().setLabel(m).setValue(m));
+	const mapPoolStr = currentMapPool.map((m) => `- ${chartName(m)}`).join('\n');
+	const options = currentMapPool.map((m) => new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)));
 
 	return new ContainerBuilder()
 		.setAccentColor(accentColor)
@@ -44,7 +49,7 @@ function getBanContainer(banner, currentMapPool, state) {
 }
 
 function getPickContainer(picker, currentMapPool, state) {
-	const mapPoolStr = currentMapPool.map((m) => `- ${m}`).join('\n');
+	const mapPoolStr = currentMapPool.map((m) => `- ${chartName(m)}`).join('\n');
 
 	const container = new ContainerBuilder()
 		.setAccentColor(accentColor)
@@ -55,11 +60,11 @@ function getPickContainer(picker, currentMapPool, state) {
 
 	if (currentMapPool.length === 1) {
 		container.addTextDisplayComponents((t) =>
-			t.setContent(`The map to be played is **${currentMapPool[0]}**!`),
+			t.setContent(`The map to be played is **${chartName(currentMapPool[0])}**!`),
 		);
 	}
 	else {
-		const options = currentMapPool.map((m) => new StringSelectMenuOptionBuilder().setLabel(m).setValue(m));
+		const options = currentMapPool.map((m) => new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)));
 		container
 			.addTextDisplayComponents((t) => t.setContent(`**${picker}**, it is your turn to pick! (tell your referee)`))
 			.addActionRowComponents((row) =>
@@ -86,7 +91,7 @@ function getReadyCheckContainer(chart, p1Name, p2Name, p1Ready, p2Ready, coverUr
 		);
 	}
 	container
-		.addTextDisplayComponents((t) => t.setContent(`**${chart}** will be played!`))
+		.addTextDisplayComponents((t) => t.setContent(`**${chartName(chart)}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent(`${p1Status} ${p1Name}\n${p2Status} ${p2Name}`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
@@ -108,8 +113,9 @@ async function startFriendlyReadyCheck(state, chart) {
 
 	const coverUrl = await getCoverUrl(chart, state);
 	const msg = state.publicMessage;
-	const songId = state.chartSongIds?.[chart] ?? null;
-	const chartLink = songId ? `[${chart}](https://spinsha.re/song/${songId})` : `**${chart}**`;
+	const name = chartName(chart);
+	const songId = (typeof chart === 'object' ? chart.songId : null) ?? state.chartSongIds?.[name] ?? null;
+	const chartLink = songId ? `[${name}](https://spinsha.re/song/${songId})` : `**${name}**`;
 
 	await msg.edit({
 		components: [getReadyCheckContainer(chartLink, state.playerNames[0], state.playerNames[1], p1Ready, p2Ready, coverUrl)],
@@ -184,7 +190,7 @@ async function startFriendlyPickPhase(interaction, state) {
 		await new Promise((resolve) => {
 			banCol.on('collect', async (k) => {
 				await k.deferUpdate();
-				currentMapPool = currentMapPool.filter((m) => m !== k.values[0]);
+				currentMapPool = currentMapPool.filter((m) => chartName(m) !== k.values[0]);
 				banTurn++;
 
 				if (banTurn >= totalBans) {
@@ -241,7 +247,7 @@ async function runPickPhase(state, skipEdit = false) {
 
 	pickCol.on('collect', async (i) => {
 		await i.deferUpdate();
-		const picked = i.values[0];
+		const picked = state.currentMapPool.find((m) => chartName(m) === i.values[0]) ?? i.values[0];
 		state.currentChart = picked;
 		pickCol.stop();
 		await startFriendlyReadyCheck(state, picked);

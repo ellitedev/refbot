@@ -1,12 +1,17 @@
 const { MessageFlags, ComponentType } = require('discord.js');
-const { getReadyCheckContainer, getCountdownContainer } = require('../ui/matchContainers.js');
+const { getReadyCheckContainer, getCountdownContainer, getBanOrderContainer, getBanContainer, getPickContainer } = require('../ui/matchContainers.js');
 const { broadcastMatchState } = require('./broadcastMatch.js');
+const { initMatchState, saveMatchState } = require('../state/match.js');
 const ChartModel = require('../models/Chart.js');
 
-async function getCoverUrl(chartName) {
-	if (!chartName) return null;
+async function getCoverUrl(chart) {
+	if (!chart) return null;
 	try {
-		const doc = await ChartModel.findOne({ csvName: chartName });
+		const songId = typeof chart === 'string' ? null : (chart.songId ?? null);
+		const name = typeof chart === 'string' ? chart : chart.name;
+		const doc = songId
+			? await ChartModel.findOne({ songId })
+			: await ChartModel.findOne({ csvName: name });
 		return doc?.cover ?? null;
 	}
 	catch {
@@ -106,7 +111,7 @@ async function startPickPhase(interaction, message, state) {
 		}
 
 		await i.deferUpdate();
-		const picked = i.values[0];
+		const picked = state.currentMapPool.find((m) => m.name === i.values[0]) ?? i.values[0];
 		state.currentChart = picked;
 		await broadcastMatchState('match.pick', state);
 		pickCol.stop();
@@ -116,4 +121,79 @@ async function startPickPhase(interaction, message, state) {
 	});
 }
 
-module.exports = { startPickPhase };
+async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber, onReject }) {
+	const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
+	const otherPlayer = randomPlayer !== player1 ? player1 : player2;
+
+	const banOrderMsg = await interaction.editReply({
+		components: [getBanOrderContainer(randomPlayer)],
+		flags: MessageFlags.IsComponentsV2,
+		withResponse: true,
+	});
+
+	const banOrderCol = banOrderMsg.createMessageComponentCollector({
+		filter: (j) => j.user.id === randomPlayer.id,
+		componentType: ComponentType.Button,
+		max: 1,
+	});
+
+	banOrderCol.on('collect', async (j) => {
+		await j.deferUpdate();
+
+		const firstBanner = j.customId === 'first' ? randomPlayer : otherPlayer;
+		const secondBanner = firstBanner === randomPlayer ? otherPlayer : randomPlayer;
+		const numBans = mapPool.length - 1;
+		const banOrder = Array.from({ length: numBans }, (_, i) => (i % 2 === 0 ? firstBanner : secondBanner));
+		let currentMapPool = [...mapPool];
+		let banTurn = 0;
+
+		const state = await initMatchState(player1, player2, firstBanner, bestOf, tier, currentMapPool, interaction, roundName, matchNumber);
+		await broadcastMatchState('match.start', state);
+
+		await interaction.editReply({
+			components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
+			flags: MessageFlags.IsComponentsV2,
+		});
+
+		const banMessage = await interaction.fetchReply();
+
+		const banSelectCol = banMessage.createMessageComponentCollector({
+			componentType: ComponentType.StringSelect,
+			filter: (k) => k.customId === 'mapBan',
+		});
+
+		banSelectCol.on('collect', async (k) => {
+			if (k.user.id !== banOrder[banTurn].id) {
+				await k.reply({ content: 'It\'s not your turn to ban!', flags: MessageFlags.Ephemeral });
+				return;
+			}
+
+			await k.deferUpdate();
+			currentMapPool = currentMapPool.filter((m) => m.name !== k.values[0]);
+			banTurn++;
+
+			if (currentMapPool.length <= 1) {
+				banSelectCol.stop();
+				state.currentMapPool = [...currentMapPool];
+				await saveMatchState();
+				await broadcastMatchState('match.pickPhaseStart', state);
+
+				await interaction.editReply({
+					components: [getPickContainer(firstBanner, currentMapPool, state.score, state.playerNames, bestOf)],
+					flags: MessageFlags.IsComponentsV2,
+				});
+
+				const pickMessage = await interaction.fetchReply();
+				startPickPhase(interaction, pickMessage, state);
+				return;
+			}
+
+			await interaction.editReply({
+				components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
+				flags: MessageFlags.IsComponentsV2,
+			});
+		});
+	});
+}
+
+module.exports = { startPickPhase, startBanPhase };

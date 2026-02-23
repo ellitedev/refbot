@@ -1,18 +1,14 @@
 const { SlashCommandBuilder, MessageFlags, ComponentType } = require('discord.js');
-const { players, initMatchState, saveMatchState, getMatchState } = require('../../state/match.js');
+const { players, getMatchState } = require('../../state/match.js');
 const MatchModel = require('../../models/Match.js');
 const { getRound } = require('../../state/rounds.js');
 const { getActiveEvent } = require('../../state/event.js');
 const {
 	getCheckInContainer,
 	getRefApprovalContainer,
-	getBanOrderContainer,
-	getBanContainer,
-	getPickContainer,
 	getSimpleContainer,
 } = require('../../ui/matchContainers.js');
-const { startPickPhase } = require('../../util/matchFlow.js');
-const { broadcastMatchState } = require('../../util/broadcastMatch.js');
+const { startBanPhase } = require('../../util/matchFlow.js');
 const { requireReferee } = require('../../util/requireReferee.js');
 
 module.exports = {
@@ -153,79 +149,7 @@ module.exports = {
 				flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
 			});
 
-			const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
-			const otherPlayer = randomPlayer !== player1 ? player1 : player2;
-
-			const banOrderMsg = await interaction.editReply({
-				components: [getBanOrderContainer(randomPlayer)],
-				flags: MessageFlags.IsComponentsV2,
-				withResponse: true,
-			});
-
-			const banOrderCol = banOrderMsg.createMessageComponentCollector({
-				filter: (j) => j.user.id === randomPlayer.id,
-				componentType: ComponentType.Button,
-				max: 1,
-			});
-
-			banOrderCol.on('collect', async (j) => {
-				await j.deferUpdate();
-
-				const firstBanner = j.customId === 'first' ? randomPlayer : otherPlayer;
-				const secondBanner = firstBanner === randomPlayer ? otherPlayer : randomPlayer;
-				const numBans = mapPool.length - 1;
-				// eslint-disable-next-line no-shadow
-				const banOrder = Array.from({ length: numBans }, (_, i) => (i % 2 === 0 ? firstBanner : secondBanner));
-				let currentMapPool = [...mapPool];
-				let banTurn = 0;
-
-				const state = await initMatchState(player1, player2, firstBanner, bestOf, tier, currentMapPool, interaction, roundName, matchNumber);
-				await broadcastMatchState('match.start', state);
-
-				await interaction.editReply({
-					components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
-					flags: MessageFlags.IsComponentsV2,
-				});
-
-				const banMessage = await interaction.fetchReply();
-
-				const banSelectCol = banMessage.createMessageComponentCollector({
-					componentType: ComponentType.StringSelect,
-					filter: (k) => k.customId === 'mapBan',
-				});
-
-				banSelectCol.on('collect', async (k) => {
-					if (k.user.id !== banOrder[banTurn].id) {
-						await k.reply({ content: 'It\'s not your turn to ban!', flags: MessageFlags.Ephemeral });
-						return;
-					}
-
-					await k.deferUpdate();
-					currentMapPool = currentMapPool.filter((m) => m !== k.values[0]);
-					banTurn++;
-
-					if (currentMapPool.length <= 1) {
-						banSelectCol.stop();
-						state.currentMapPool = [...currentMapPool];
-						await saveMatchState();
-						await broadcastMatchState('match.pickPhaseStart', state);
-
-						await interaction.editReply({
-							components: [getPickContainer(firstBanner, currentMapPool, state.score, state.playerNames, bestOf)],
-							flags: MessageFlags.IsComponentsV2,
-						});
-
-						const pickMessage = await interaction.fetchReply();
-						startPickPhase(interaction, pickMessage, state);
-						return;
-					}
-
-					await interaction.editReply({
-						components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
-						flags: MessageFlags.IsComponentsV2,
-					});
-				});
-			});
+			await startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber });
 		});
 	},
 };

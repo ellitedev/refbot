@@ -20,6 +20,10 @@ const MatchModel = require('../../models/Match.js');
 
 const accentColor = 0x40ffa0;
 
+function chartName(entry) {
+	return typeof entry === 'string' ? entry : entry.name;
+}
+
 function getSetupContainer(p1, p2, bestOf, hasBans, chartCount) {
 	return new ContainerBuilder()
 		.setAccentColor(accentColor)
@@ -349,8 +353,8 @@ module.exports = {
 				}
 			}
 
-			const mapPool = charts.map((c) => `${c.title} - ${c.charter}`);
-			const chartSongIds = Object.fromEntries(charts.map((c) => [`${c.title} - ${c.charter}`, c.songId]));
+			const mapPool = charts.map((c) => ({ name: `${c.title} - ${c.charter}`, songId: c.songId ?? null }));
+			const chartSongIds = Object.fromEntries(mapPool.map((c) => [c.name, c.songId]));
 
 			let checkedIn = false;
 			while (!checkedIn) {
@@ -486,15 +490,19 @@ module.exports = {
 			else state.score[1]++;
 
 			const chart = state.currentChart;
+			const chartDisplayName = chartName(chart);
+
 			state.currentChart = null;
 			state.playedCharts.push(chart);
-			state.currentMapPool = state.fullMapPool.filter((m) => !state.playedCharts.includes(m));
 
-			await recordFriendlyChartResult(refUserId, { chart, score1, score2, fc1, fc2, pfc1, pfc2, winner: winnerName });
+			const playedNames = new Set(state.playedCharts.map((c) => chartName(c)));
+			state.currentMapPool = state.fullMapPool.filter((m) => !playedNames.has(chartName(m)));
+
+			await recordFriendlyChartResult(refUserId, { chart: chartDisplayName, score1, score2, fc1, fc2, pfc1, pfc2, winner: winnerName });
 
 			const scoreStr = [
 				'```',
-				`Chart Results: ${chart}`,
+				`Chart Results: ${chartDisplayName}`,
 				'',
 				`${state.playerNames[0]} | ${fcLabel(score1, fc1, pfc1)}`,
 				`${state.playerNames[1]} | ${fcLabel(score2, fc2, pfc2)}`,

@@ -11,6 +11,11 @@ const chartResultSchema = new Schema({
 	winner: String,
 }, { _id: false });
 
+const chartEntrySchema = new Schema({
+	name: { type: String, required: true },
+	songId: { type: Number, default: null },
+}, { _id: false });
+
 const matchSchema = new Schema({
 	event: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
 	round: { type: String, required: true },
@@ -23,10 +28,10 @@ const matchSchema = new Schema({
 	bestOf: Number,
 	tier: Number,
 	winner: String,
-	fullMapPool: [String],
-	currentMapPool: [String],
-	playedCharts: [String],
-	currentChart: { type: String, default: null },
+	fullMapPool: [chartEntrySchema],
+	currentMapPool: [chartEntrySchema],
+	playedCharts: [chartEntrySchema],
+	currentChart: { type: chartEntrySchema, default: null },
 	currentPickerDiscordId: { type: String, default: null },
 	chartResults: [chartResultSchema],
 	status: { type: String, enum: ['in_progress', 'completed', 'restarted'], default: 'in_progress' },

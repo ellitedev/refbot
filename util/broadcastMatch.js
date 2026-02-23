@@ -25,8 +25,11 @@ async function getChartData(chartName, songId) {
 }
 
 async function broadcastMatchState(event, state, extra = {}) {
-	const currentChartData = state.currentChart
-		? await getChartData(state.currentChart, state.currentChartSongId ?? null)
+	const chart = state.currentChart;
+	const chartName = typeof chart === 'string' ? chart : (chart?.name ?? null);
+	const chartSongId = typeof chart === 'string' ? null : (chart?.songId ?? null);
+	const currentChartData = chartName || chartSongId
+		? await getChartData(chartName, chartSongId)
 		: null;
 
 	const poolWithData = await Promise.all(

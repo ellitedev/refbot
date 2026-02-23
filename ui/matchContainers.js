@@ -2,6 +2,10 @@ const { ContainerBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, S
 
 const accentColor = 0x40ffa0;
 
+function chartName(entry) {
+	return typeof entry === 'string' ? entry : entry.name;
+}
+
 function getCheckInContainer(players) {
 	const playerOptions = players.map((p) =>
 		new StringSelectMenuOptionBuilder().setLabel(p).setValue(p),
@@ -54,10 +58,10 @@ function getBanOrderContainer(randomPlayer) {
 function getBanContainer(nextBanner, currentMapPool, score, playerNames, bestOf) {
 	const scoreStr = `**${playerNames[0]}** ${score[0]} - ${score[1]} **${playerNames[1]}** *(Best of ${bestOf})*`;
 	let mapPoolStr = '**Map Pool:**';
-	for (const map of currentMapPool) mapPoolStr += `\n- ${map}`;
+	for (const map of currentMapPool) mapPoolStr += `\n- ${chartName(map)}`;
 
 	const mapPoolOptions = currentMapPool.map((m) =>
-		new StringSelectMenuOptionBuilder().setLabel(m).setValue(m),
+		new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)),
 	);
 
 	return new ContainerBuilder()
@@ -80,7 +84,7 @@ function getBanContainer(nextBanner, currentMapPool, score, playerNames, bestOf)
 function getPickContainer(nextPicker, currentMapPool, score, playerNames, bestOf) {
 	const scoreStr = `**${playerNames[0]}** ${score[0]} - ${score[1]} **${playerNames[1]}** *(Best of ${bestOf})*`;
 	let mapPoolStr = '**Map Pool:**';
-	for (const map of currentMapPool) mapPoolStr += `\n- ${map}`;
+	for (const map of currentMapPool) mapPoolStr += `\n- ${chartName(map)}`;
 
 	const container = new ContainerBuilder()
 		.setAccentColor(accentColor)
@@ -91,12 +95,12 @@ function getPickContainer(nextPicker, currentMapPool, score, playerNames, bestOf
 
 	if (currentMapPool.length === 1) {
 		container.addTextDisplayComponents((t) =>
-			t.setContent(`The map to be played is **${currentMapPool[0]}**!`),
+			t.setContent(`The map to be played is **${chartName(currentMapPool[0])}**!`),
 		);
 	}
 	else {
 		const mapPoolOptions = currentMapPool.map((m) =>
-			new StringSelectMenuOptionBuilder().setLabel(m).setValue(m),
+			new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)),
 		);
 		container
 			.addTextDisplayComponents((t) => t.setContent(`**${nextPicker.username}**, it is your turn to pick!`))
@@ -133,7 +137,7 @@ function getReadyCheckContainer(chart, p1, p2, p1Ready, p2Ready, initialPing = f
 	}
 
 	container
-		.addTextDisplayComponents((t) => t.setContent(`${pingLine}**${chart}** will be played!`))
+		.addTextDisplayComponents((t) => t.setContent(`${pingLine}**${chartName(chart)}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent(`${p1Status} ${p1.username}\n${p2Status} ${p2.username}`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
@@ -157,7 +161,7 @@ function getCountdownContainer(chart, coverUrl = null) {
 	}
 
 	container
-		.addTextDisplayComponents((t) => t.setContent(`**${chart}** will be played!`))
+		.addTextDisplayComponents((t) => t.setContent(`**${chartName(chart)}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent('Both players ready! Starting countdown...'));
 
 	return container;
