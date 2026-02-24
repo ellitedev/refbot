@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "dev": "NODE_ENV=development node --watch --watch-path=. index.js",
+    "dev": "NODE_ENV=development node --watch index.js",
     "deploy": "node deploy-commands.js",
     "deploy-test": "NODE_ENV=development node deploy-commands.js"
   },
