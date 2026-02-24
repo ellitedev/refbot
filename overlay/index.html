@@ -852,9 +852,15 @@
   <script>
     let ws = null;
 
-    const defaultWsUrl = (typeof window.WS_PORT !== 'undefined')
-      ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${window.WS_PORT}`
-      : `${location.protocol === 'https:' ? 'wss' : 'ws'}://localhost:8080`;
+    const defaultWsUrl = (() => {
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+      // In production behind Traefik (HTTPS), prefer connecting to the same host (no port): wss://refbot.ellite.dev
+      if (location.protocol === 'https:') return `${scheme}://${location.host}`;
+      // In dev (HTTP) prefer an explicit WS port when provided (e.g. docker compose mapped port)
+      if (typeof window.WS_PORT !== 'undefined' && window.WS_PORT) return `${scheme}://${location.hostname}:${window.WS_PORT}`;
+      // Fallback to localhost default for simple local dev
+      return `${scheme}://localhost:8080`;
+    })();
 
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('ws-url').value = defaultWsUrl;
