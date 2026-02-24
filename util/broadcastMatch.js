@@ -24,6 +24,17 @@ async function getChartData(chartName, songId) {
 	};
 }
 
+function getPlayerData(user, name) {
+	if (!user) return { name: name ?? null, discordId: null, username: null, displayName: null, avatar: null };
+	return {
+		name,
+		discordId: user.id,
+		username: user.username ?? null,
+		displayName: user.displayName ?? user.username ?? null,
+		avatar: user.displayAvatarURL({ size: 128, extension: 'png' }) ?? null,
+	};
+}
+
 async function broadcastMatchState(event, state, extra = {}) {
 	const chart = state.currentChart;
 	const chartName = typeof chart === 'string' ? chart : (chart?.name ?? null);
@@ -41,22 +52,38 @@ async function broadcastMatchState(event, state, extra = {}) {
 		}),
 	);
 
+	const fullPoolWithData = await Promise.all(
+		(state.fullMapPool ?? []).map(async (entry) => {
+			const name = typeof entry === 'string' ? entry : entry.name;
+			const songId = typeof entry === 'string' ? null : (entry.songId ?? null);
+			const data = await getChartData(name, songId);
+			return data ?? { displayName: name };
+		}),
+	);
+
 	broadcast(event, {
 		round: state.round,
 		matchNumber: state.matchNumber,
 		players: [
-			{ name: state.playerNames[0], discordId: state.player1?.id },
-			{ name: state.playerNames[1], discordId: state.player2?.id },
+			getPlayerData(state.player1, state.playerNames[0]),
+			getPlayerData(state.player2, state.playerNames[1]),
 		],
 		score: state.score,
 		bestOf: state.bestOf,
 		winsNeeded: state.winsNeeded,
 		currentChart: currentChartData,
 		currentMapPool: poolWithData,
+		fullMapPool: fullPoolWithData,
 		playedCharts: state.playedCharts,
-		currentPickerDiscordId: state.currentPicker?.id ?? null,
+		bannedCharts: state.bannedCharts ?? [],
+		currentPicker: getPlayerData(state.currentPicker, state.currentPicker
+			? (state.player1?.id === state.currentPicker.id ? state.playerNames[0] : state.playerNames[1])
+			: null),
+		currentBanner: getPlayerData(state.currentBanner, state.currentBanner
+			? (state.player1?.id === state.currentBanner.id ? state.playerNames[0] : state.playerNames[1])
+			: null),
 		...extra,
 	});
 }
 
-module.exports = { broadcastMatchState, getChartData };
+module.exports = { broadcastMatchState, getChartData, getPlayerData };

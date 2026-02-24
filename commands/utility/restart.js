@@ -10,6 +10,7 @@ const {
 } = require('../../ui/matchContainers.js');
 const { startBanPhase } = require('../../util/matchFlow.js');
 const { requireReferee } = require('../../util/requireReferee.js');
+const { broadcast } = require('../../state/ws.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -107,10 +108,12 @@ module.exports = {
 
 			if (index === 0 && player1 === null) {
 				player1 = i.user;
+				broadcast('match.checkIn', { playerNames: players, p1CheckedIn: true, p2CheckedIn: !!player2, round: roundName, matchNumber });
 				await i.reply({ content: `You have checked in as **${selection}**. Please wait for referee approval.`, flags: MessageFlags.Ephemeral });
 			}
 			else if (index === 1 && player2 === null) {
 				player2 = i.user;
+				broadcast('match.checkIn', { playerNames: players, p1CheckedIn: !!player1, p2CheckedIn: true, round: roundName, matchNumber });
 				await i.reply({ content: `You have checked in as **${selection}**. Please wait for referee approval.`, flags: MessageFlags.Ephemeral });
 			}
 			else {
@@ -149,6 +152,7 @@ module.exports = {
 				flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
 			});
 
+			broadcast('match.approved', { playerNames: players, round: roundName, matchNumber });
 			await startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber });
 		});
 	},

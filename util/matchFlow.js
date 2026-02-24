@@ -74,6 +74,10 @@ async function startReadyCheck(interaction, chart, state) {
 		}
 		else {
 			const unreadyPlayer = !p1Ready ? state.player1 : state.player2;
+			await broadcastMatchState('match.playerReady', state, {
+				p1Ready,
+				p2Ready,
+			});
 			await interaction.editReply({
 				components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, false, unreadyPlayer, coverUrl)],
 				flags: MessageFlags.IsComponentsV2,
@@ -112,8 +116,11 @@ async function startPickPhase(interaction, message, state) {
 
 		await i.deferUpdate();
 		const picked = state.currentMapPool.find((m) => m.name === i.values[0]) ?? i.values[0];
+		const pickedBy = state.currentPicker;
 		state.currentChart = picked;
-		await broadcastMatchState('match.pick', state);
+		await broadcastMatchState('match.pick', state, {
+			pickedByDiscordId: pickedBy.id,
+		});
 		pickCol.stop();
 		state._activeCollector = null;
 
@@ -148,7 +155,13 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 		let banTurn = 0;
 
 		const state = await initMatchState(player1, player2, firstBanner, bestOf, tier, currentMapPool, interaction, roundName, matchNumber);
+		state.bannedCharts = [];
+		state.currentBanner = banOrder[0];
+
 		await broadcastMatchState('match.start', state);
+		await broadcastMatchState('match.banOrderDecided', state, {
+			firstBannerDiscordId: firstBanner.id,
+		});
 
 		await interaction.editReply({
 			components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
@@ -169,13 +182,24 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 			}
 
 			await k.deferUpdate();
-			currentMapPool = currentMapPool.filter((m) => m.name !== k.values[0]);
+
+			const bannedName = k.values[0];
+			const banner = banOrder[banTurn];
+			state.bannedCharts = [...(state.bannedCharts ?? []), { name: bannedName, bannedBy: banner.id }];
+
+			currentMapPool = currentMapPool.filter((m) => m.name !== bannedName);
 			banTurn++;
+
+			state.currentMapPool = [...currentMapPool];
+			state.currentBanner = banOrder[banTurn] ?? null;
 
 			if (currentMapPool.length <= 1) {
 				banSelectCol.stop();
-				state.currentMapPool = [...currentMapPool];
 				await saveMatchState();
+				await broadcastMatchState('match.ban', state, {
+					bannedChart: bannedName,
+					bannedByDiscordId: banner.id,
+				});
 				await broadcastMatchState('match.pickPhaseStart', state);
 
 				await interaction.editReply({
@@ -187,6 +211,11 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 				startPickPhase(interaction, pickMessage, state);
 				return;
 			}
+
+			await broadcastMatchState('match.ban', state, {
+				bannedChart: bannedName,
+				bannedByDiscordId: banner.id,
+			});
 
 			await interaction.editReply({
 				components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],

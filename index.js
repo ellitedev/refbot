@@ -17,6 +17,7 @@ const { loadGeneratedPoolsFromDB } = require('./state/generatedPools.js');
 const { loadInProgressMatch, getMatchStateRef } = require('./state/match.js');
 const { resumeMatch } = require('./util/resumeMatch.js');
 const { startWebSocketServer } = require('./state/ws.js');
+const { startHttpServer } = require('./state/http.js');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -24,6 +25,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 	console.log('Ready! Logged in as', readyClient.user.tag);
 
 	startWebSocketServer();
+	startHttpServer();
 	await connectDB();
 	await loadActiveEvent();
 
