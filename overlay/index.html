@@ -5,22 +5,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SSSO Match Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
   <link
-    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Barlow+Condensed:wght@300;400;600&display=swap"
-    rel="stylesheet" />
+    href="https://fonts.googleapis.com/css2?family=Cascadia+Code:ital,wght@0,200..700;1,200..700&amp;family=Cascadia+Mono:ital,wght@0,200..700;1,200..700&amp;display=swap"
+    rel="stylesheet">
   <style>
     :root {
-      --bg: #09090f;
-      --surface: #10101a;
-      --surface2: #181826;
-      --accent: #e040fb;
-      --accent2: #7c4dff;
-      --win: #00e5a0;
-      --lose: #ff4081;
-      --text: #f0eeff;
-      --muted: #6b6880;
-      --border: rgba(224, 64, 251, 0.18);
-      --glow: rgba(224, 64, 251, 0.35);
+      --bg: #212629;
+      --surface: #1b1f26;
+      --surface2: #282c35;
+      --accent: #fb1357;
+      --accent2: #25a7fb;
+      --win: #3dfb84;
+      --lose: #fb1357;
+      --text: #fff;
+      --muted: #ffffff80;
+      --border: rgba(255, 255, 255, 0.12);
+      --glow: rgba(255, 255, 255, 0.35);
     }
 
     * {
@@ -32,17 +34,13 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: 'Barlow Condensed', sans-serif;
+      font-family: 'Cascadia Code', sans-serif;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 2rem;
-      gap: 1.5rem;
-      background-image:
-        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(124, 77, 255, 0.12) 0%, transparent 70%),
-        repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255, 255, 255, 0.02) 40px),
-        repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255, 255, 255, 0.02) 40px);
+      padding: 1rem;
+      gap: 1rem;
     }
 
     header {
@@ -53,17 +51,6 @@
       justify-content: space-between;
       border-bottom: 1px solid var(--border);
       padding-bottom: 1rem;
-    }
-
-    .logo {
-      font-family: 'Orbitron', monospace;
-      font-weight: 900;
-      font-size: 1.4rem;
-      letter-spacing: 0.15em;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
     }
 
     #ws-status {
@@ -106,7 +93,7 @@
       color: var(--text);
       padding: 0.4rem 0.75rem;
       border-radius: 6px;
-      font-family: 'Barlow Condensed', sans-serif;
+      font-family: 'Cascadia Code', sans-serif;
       font-size: 0.95rem;
       width: 220px;
       outline: none;
@@ -118,12 +105,12 @@
     }
 
     button {
-      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      background: var(--accent2);
       border: none;
       color: #fff;
       padding: 0.4rem 1rem;
       border-radius: 6px;
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.75rem;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -233,7 +220,7 @@
     }
 
     .player-name {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-weight: 700;
       font-size: 1.1rem;
       letter-spacing: 0.06em;
@@ -258,7 +245,7 @@
     }
 
     .score-display {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-weight: 900;
       font-size: 3rem;
       line-height: 1;
@@ -283,7 +270,7 @@
     }
 
     .section-title {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.65rem;
       letter-spacing: 0.2em;
       text-transform: uppercase;
@@ -324,7 +311,7 @@
     }
 
     .chart-title {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-weight: 700;
       font-size: 1rem;
       letter-spacing: 0.04em;
@@ -346,7 +333,7 @@
       background: linear-gradient(135deg, var(--accent2), var(--accent));
       border-radius: 6px;
       padding: 0.3rem 0.7rem;
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.75rem;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -395,7 +382,7 @@
       position: absolute;
       top: 6px;
       right: 6px;
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.55rem;
       font-weight: 700;
       letter-spacing: 0.12em;
@@ -537,7 +524,7 @@
     }
 
     .phase-bar-icon {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.6rem;
       font-weight: 700;
       letter-spacing: 0.12em;
@@ -583,7 +570,7 @@
 
     .phase-bar-icon {
       font-size: 0.7rem;
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-weight: 700;
       letter-spacing: 0.12em;
       text-transform: uppercase;
@@ -637,7 +624,7 @@
     }
 
     .match-end-banner .winner-label {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.7rem;
       letter-spacing: 0.2em;
       text-transform: uppercase;
@@ -646,7 +633,7 @@
     }
 
     .match-end-banner .winner-name {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-weight: 900;
       font-size: 2rem;
       background: linear-gradient(90deg, var(--accent2), var(--accent));
@@ -669,7 +656,7 @@
     }
 
     .checkin-title {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.65rem;
       letter-spacing: 0.2em;
       text-transform: uppercase;
@@ -724,7 +711,7 @@
     }
 
     .checkin-name {
-      font-family: 'Orbitron', monospace;
+      font-family: 'Cascadia Code', monospace;
       font-size: 0.85rem;
       font-weight: 700;
       letter-spacing: 0.04em;
@@ -751,7 +738,6 @@
 <body>
 
   <header>
-    <div class="logo">SSSO</div>
     <div class="ws-config">
       <input type="text" id="ws-url" placeholder="ws://localhost:8080" value="ws://localhost:8080" />
       <button onclick="connect()">Connect</button>
