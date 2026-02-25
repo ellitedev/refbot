@@ -4,11 +4,8 @@ let headerHideTimeout = null;
 
 const defaultWsUrl = (() => {
 	const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-	// In production behind Traefik (HTTPS), prefer connecting to the same host (no port): wss://refbot.ellite.dev
 	if (location.protocol === 'https:') return `${scheme}://${location.host}`;
-	// In dev (HTTP) prefer an explicit WS port when provided (e.g. docker compose mapped port)
 	if (typeof window.WS_PORT !== 'undefined' && window.WS_PORT) return `${scheme}://${location.hostname}:${window.WS_PORT}`;
-	// Fallback to localhost default for simple local dev
 	return `${scheme}://localhost:8080`;
 })();
 
@@ -17,46 +14,26 @@ document.addEventListener('DOMContentLoaded', () => {
 	connect();
 });
 
-// track full pool so we can infer bans from shrinking currentMapPool
-let fullMapPool = [];
-// name -> chart data object, populated from any pool data we receive
-const chartDataCache = {};
-// name of the currently picked/playing chart
+let mappool = [];
 let currentChartName = null;
-// set of names that have been played (finished with a result)
-let playedChartNames = new Set();
-// set of names currently in the active map pool (shrinks as bans happen)
-let activePoolNames = new Set();
-// set of names that have been explicitly banned (from match.ban events)
-let bannedChartNames = new Set();
-// whether a chart is actively being played right now
 let chartIsLive = false;
-// ready state during ready check phase
 let p1Ready = false;
 let p2Ready = false;
 
-function entryName(e) {
-	return typeof e === 'string' ? e : (e.csvName ?? e.displayName ?? e.name ?? '?');
+function getEntry(csvName) {
+	return mappool.find(e => e.csvName === csvName) ?? null;
 }
 
 function entryDisplay(e) {
-	return typeof e === 'string' ? e : (e.title ?? e.displayName ?? e.name ?? '?');
-}
-
-function cacheChartData(pool) {
-	(pool ?? []).forEach(e => {
-		if (typeof e === 'object') {
-			const n = entryName(e);
-			if (n && n !== '?') chartDataCache[n] = e;
-		}
-	});
+	if (!e) return '?';
+	if (typeof e === 'string') return e;
+	return e.title ?? e.displayName ?? e.csvName ?? '?';
 }
 
 function connect() {
 	if (ws) ws.close();
 	const url = document.getElementById('ws-url').value.trim() || 'ws://localhost:8080';
 	setStatus('connecting');
-	// If the page is served over HTTPS, force a secure WebSocket scheme.
 	let connectUrl = url;
 	if (location.protocol === 'https:' && connectUrl.startsWith('ws://')) {
 		connectUrl = connectUrl.replace(/^ws:/, 'wss:');
@@ -74,13 +51,14 @@ function connect() {
 		setStatus('connected');
 		document.getElementById('waiting').innerHTML = '<div>Connected! Waiting for a match to start...</div><div class="sub">No match is currently in progress</div>';
 		try {
-			const httpPort = window.HTTP_PORT ?? '8081';
-			const res = await fetch(`http://${location.hostname}:${httpPort}/state`);
+			const stateUrl = location.protocol === 'https:'
+				? `${location.origin}/state`
+				: `http://${location.hostname}:${window.HTTP_PORT}/state`;
+			const res = await fetch(stateUrl);
 			const snapshot = await res.json();
 			if (snapshot) handleMessage(snapshot);
 		}
 		catch (error) {
-			// Silently fail - initial state fetch is optional
 			console.debug('Failed to fetch initial state:', error);
 		}
 	};
@@ -108,16 +86,13 @@ function setStatus(s) {
 	dot.className = '';
 	if (s === 'connected') {
 		dot.classList.add('connected');
-		// Start the hide timer when connected
 		hideHeaderAfterDelay();
 	}
 	else if (s === 'error') {
 		dot.classList.add('error');
-		// Show header on error
 		showHeader();
 	}
 	else {
-		// Show header on disconnect
 		showHeader();
 	}
 	label.textContent = s;
@@ -126,9 +101,8 @@ function setStatus(s) {
 function handleMessage({ event, data }) {
 	if (!data) return;
 	showMatchView();
-	cacheChartData(data.currentMapPool);
-	cacheChartData(data.playedCharts);
-	cacheChartData(data.fullMapPool);
+
+	if (data.mappool?.length) mappool = data.mappool;
 
 	switch (event) {
 	case 'match.checkIn':
@@ -140,26 +114,40 @@ function handleMessage({ event, data }) {
 		addFeed('Check-in approved - match starting!', 'feed-pick');
 		break;
 
-	case 'match.snapshot':
-		// restore full state on reconnect
-		if (data.fullMapPool?.length) {
-			fullMapPool = [...data.fullMapPool];
-			cacheChartData(fullMapPool);
-		}
-		if (data.bannedCharts) bannedChartNames = new Set(data.bannedCharts.map(b => typeof b === 'string' ? b : b.name));
-		playedChartNames = new Set((data.playedCharts ?? []).map(c => typeof c === 'string' ? c : c.name));
-		activePoolNames = new Set((data.currentMapPool ?? []).map(entryName));
-		currentChartName = data.currentChart ? entryName(data.currentChart) : null;
-		chartIsLive = !!data.currentChart;
+	case 'match.snapshot': {
+		currentChartName = data.currentChart ?? null;
+		chartIsLive = data.progressLevel === 'playing';
+		p1Ready = data.players?.[0]?.ready ?? false;
+		p2Ready = data.players?.[1]?.ready ?? false;
+		updateReadyState();
 		updateScoreboard(data);
-		if (data.currentChart) updateCurrentChart(data.currentChart);
+		if (currentChartName) updateCurrentChart(getEntry(currentChartName));
+		else clearCurrentChart();
 		renderMapPool();
+		updatePhaseBarFromState(data);
+		showMatchView();
+		break;
+	}
+
+	case 'match.start':
+		document.getElementById('checkin-banner').classList.remove('visible');
+		document.getElementById('end-banner').style.display = 'none';
+		currentChartName = null;
+		chartIsLive = false;
+		p1Ready = false;
+		p2Ready = false;
+		updateReadyState();
+		updateScoreboard(data);
+		renderMapPool();
+		clearCurrentChart();
+		addFeed('Match started - ban phase beginning', 'feed-pick');
 		showMatchView();
 		break;
 
 	case 'match.banOrderDecided': {
-		const firstBanner = data.currentBanner ?? data.players?.find(p => p.discordId === data.firstBannerDiscordId);
-		const fbn = firstBanner?.displayName ?? firstBanner?.name ?? '?';
+		const firstBanner = data.players?.find(p => p.discordId === data.firstBannerDiscordId)
+			?? data.players?.find(p => p.discordId === data.banPhase?.currentBannerDiscordId);
+		const fbn = firstBanner?.displayName ?? '?';
 		addFeed(`${fbn} will ban first`, 'feed-ban');
 		updatePhaseBar('banning', `${fbn} is banning...`);
 		updateScoreboard(data);
@@ -168,15 +156,14 @@ function handleMessage({ event, data }) {
 	}
 
 	case 'match.ban': {
-		activePoolNames = new Set((data.currentMapPool ?? []).map(entryName));
-		if (data.bannedChart) bannedChartNames.add(data.bannedChart);
 		const banner = data.players?.find(p => p.discordId === data.bannedByDiscordId);
-		const bannerName = banner?.displayName ?? banner?.name ?? 'Someone';
-		addFeed(`${bannerName} banned ${data.bannedChart}`, 'feed-ban');
-		const nextBanner = data.currentBanner;
-		if (nextBanner?.discordId) {
-			const nbn = nextBanner.displayName ?? nextBanner.name ?? '?';
-			updatePhaseBar('banning', `${nbn} is banning...`);
+		const bannerName = banner?.displayName ?? 'Someone';
+		const bannedEntry = data.mappool?.find(e => e.csvName === data.bannedChart);
+		const bannedDisplay = bannedEntry ? entryDisplay(bannedEntry) : data.bannedChart;
+		addFeed(`${bannerName} banned ${bannedDisplay}`, 'feed-ban');
+		const nextBanner = data.players?.find(p => p.discordId === data.banPhase?.currentBannerDiscordId);
+		if (nextBanner) {
+			updatePhaseBar('banning', `${nextBanner.displayName} is banning...`);
 		}
 		else {
 			updatePhaseBar(null);
@@ -186,27 +173,24 @@ function handleMessage({ event, data }) {
 		break;
 	}
 
-	case 'match.start':
-		document.getElementById('checkin-banner').classList.remove('visible');
-		document.getElementById('end-banner').style.display = 'none';
-		fullMapPool = [...(data.fullMapPool?.length ? data.fullMapPool : (data.currentMapPool ?? []))];
-		cacheChartData(fullMapPool);
-		activePoolNames = new Set((data.currentMapPool ?? []).map(entryName));
-		playedChartNames = new Set();
-		bannedChartNames = new Set();
-		currentChartName = null;
+	case 'match.firstChartDetermined': {
+		const entry = getEntry(data.chart ?? data.currentChart);
+		currentChartName = data.chart ?? data.currentChart ?? null;
 		chartIsLive = false;
+		p1Ready = false;
+		p2Ready = false;
+		updateReadyState();
 		updateScoreboard(data);
+		if (entry) updateCurrentChart(entry);
 		renderMapPool();
-		clearCurrentChart();
-		addFeed('Match started - ban phase beginning', 'feed-pick');
-		showMatchView();
+		addFeed(`Last map standing: ${entry ? entryDisplay(entry) : currentChartName}`, 'feed-pick');
+		updatePhaseBar('playing', `Ready check: ${entry ? entryDisplay(entry) : '...'}`);
 		break;
+	}
 
 	case 'match.pickPhaseStart': {
-		activePoolNames = new Set((data.currentMapPool ?? []).map(entryName));
-		const firstPicker = data.currentPicker;
-		const fpn = firstPicker?.displayName ?? firstPicker?.name ?? '?';
+		const firstPicker = data.players?.find(p => p.discordId === data.currentPickerDiscordId);
+		const fpn = firstPicker?.displayName ?? '?';
 		updatePhaseBar('picking', `${fpn} is picking...`);
 		updateScoreboard(data);
 		renderMapPool();
@@ -216,49 +200,53 @@ function handleMessage({ event, data }) {
 	}
 
 	case 'match.pick': {
-		activePoolNames = new Set((data.currentMapPool ?? []).map(entryName));
-		currentChartName = data.currentChart ? entryName(data.currentChart) : null;
+		currentChartName = data.currentChart ?? null;
 		chartIsLive = false;
 		p1Ready = false;
 		p2Ready = false;
 		updateReadyState();
 		updateScoreboard(data);
-		if (data.currentChart) updateCurrentChart(data.currentChart);
+		const pickedEntry = currentChartName ? getEntry(currentChartName) : null;
+		if (pickedEntry) updateCurrentChart(pickedEntry);
 		renderMapPool();
-		if (data.currentChart) {
+		if (pickedEntry) {
 			const picker = data.players?.find(p => p.discordId === data.pickedByDiscordId);
-			const pn = picker?.displayName ?? picker?.name ?? '?';
-			const cn = entryDisplay(data.currentChart);
-			addFeed(`${pn} picked ${cn}`, 'feed-pick');
+			const pn = picker?.displayName ?? '?';
+			addFeed(`${pn} picked ${entryDisplay(pickedEntry)}`, 'feed-pick');
 		}
-		updatePhaseBar('playing', `Playing: ${data.currentChart ? entryDisplay(data.currentChart) : '...'}`);
+		updatePhaseBar('playing', `Ready check: ${pickedEntry ? entryDisplay(pickedEntry) : '...'}`);
 		break;
 	}
 
-	case 'match.playerReady':
-		p1Ready = data.p1Ready ?? false;
-		p2Ready = data.p2Ready ?? false;
+	case 'match.playerReady': {
+		const prevP1Ready = p1Ready;
+		const prevP2Ready = p2Ready;
+		p1Ready = data.players?.[0]?.ready ?? false;
+		p2Ready = data.players?.[1]?.ready ?? false;
 		updateReadyState();
-		addFeed(`${data.p1Ready && !data.p2Ready
-			? (data.players?.[0]?.displayName ?? data.players?.[0]?.name ?? 'P1')
-			: (data.players?.[1]?.displayName ?? data.players?.[1]?.name ?? 'P2')} is ready!`, 'feed-win');
+		const newlyReadyName = !prevP1Ready && p1Ready
+			? (data.players?.[0]?.displayName ?? 'P1')
+			: !prevP2Ready && p2Ready
+				? (data.players?.[1]?.displayName ?? 'P2')
+				: null;
+		if (newlyReadyName) addFeed(`${newlyReadyName} is ready!`, 'feed-win');
 		break;
+	}
 
-	case 'match.chartStart':
+	case 'match.chartStart': {
 		p1Ready = true;
 		p2Ready = true;
 		updateReadyState();
-		// both players readied up
-		currentChartName = data.currentChart ? entryName(data.currentChart) : currentChartName;
+		currentChartName = data.currentChart ?? currentChartName;
 		chartIsLive = true;
 		updateScoreboard(data);
-		if (data.currentChart) updateCurrentChart(data.currentChart);
+		const liveEntry = currentChartName ? getEntry(currentChartName) : null;
+		if (liveEntry) updateCurrentChart(liveEntry);
 		renderMapPool();
-		if (data.currentChart) {
-			const n = entryDisplay(data.currentChart);
-			addFeed(`Now playing: ${n}`, 'feed-pick');
-		}
+		if (liveEntry) addFeed(`Now playing: ${entryDisplay(liveEntry)}`, 'feed-pick');
+		updatePhaseBar('playing', `Playing: ${liveEntry ? entryDisplay(liveEntry) : '...'}`);
 		break;
+	}
 
 	case 'match.chartResult': {
 		chartIsLive = false;
@@ -266,29 +254,31 @@ function handleMessage({ event, data }) {
 		p2Ready = false;
 		updateReadyState();
 		updateScoreboard(data);
-		if (data.chart) playedChartNames.add(entryName(data.chart));
-		activePoolNames = new Set((data.currentMapPool ?? []).map(entryName));
+		const resultEntry = (data.mappool ?? [])
+			.filter(e => e.status?.played && e.result)
+			.sort((a, b) => new Date(b.status.playedAt) - new Date(a.status.playedAt))[0] ?? null;
 		currentChartName = null;
 		clearCurrentChart();
 		renderMapPool();
-		const chartTitle = data.chart ? entryDisplay(data.chart) : 'Chart';
-		const p1n = data.players?.[0]?.displayName ?? data.players?.[0]?.name ?? 'P1';
-		const p2n = data.players?.[1]?.displayName ?? data.players?.[1]?.name ?? 'P2';
-		const s1 = fmtScore(data.score1, data.fc1, data.pfc1);
-		const s2 = fmtScore(data.score2, data.fc2, data.pfc2);
-		addFeed(`${chartTitle}: ${p1n} ${s1} vs ${p2n} ${s2} - ${data.winner} wins!`, 'feed-win');
-		const nextPicker = data.currentPicker;
-		if (nextPicker?.discordId) {
-			const npn = nextPicker.displayName ?? nextPicker.name ?? '?';
-			updatePhaseBar('picking', `${npn} is picking...`);
-		}
+		const chartTitle = resultEntry ? entryDisplay(resultEntry) : 'Chart';
+		const p1n = data.players?.[0]?.displayName ?? 'P1';
+		const p2n = data.players?.[1]?.displayName ?? 'P2';
+		const result = resultEntry?.result ?? {};
+		const s1 = fmtScore(result.score1, result.fc1, result.pfc1);
+		const s2 = fmtScore(result.score2, result.fc2, result.pfc2);
+		const winnerPlayer = data.players?.find(p => p.discordId === result.winnerDiscordId);
+		addFeed(`${chartTitle}: ${p1n} ${s1} vs ${p2n} ${s2} - ${winnerPlayer?.displayName ?? 'someone'} wins!`, 'feed-win');
+		const nextPicker = data.players?.find(p => p.discordId === data.currentPickerDiscordId);
+		if (nextPicker) updatePhaseBar('picking', `${nextPicker.displayName} is picking...`);
 		break;
 	}
 
 	case 'match.end':
 		chartIsLive = false;
+		p1Ready = false;
+		p2Ready = false;
+		updateReadyState();
 		updateScoreboard(data);
-		if (data.chart) playedChartNames.add(entryName(data.chart));
 		currentChartName = null;
 		clearCurrentChart();
 		renderMapPool();
@@ -301,9 +291,32 @@ function handleMessage({ event, data }) {
 
 	default:
 		updateScoreboard(data);
-		if (data.currentChart) updateCurrentChart(data.currentChart);
-		if (data.currentMapPool) activePoolNames = new Set(data.currentMapPool.map(entryName));
+		if (data.currentChart) {
+			currentChartName = data.currentChart;
+			updateCurrentChart(getEntry(currentChartName));
+		}
 		renderMapPool();
+	}
+}
+
+function updatePhaseBarFromState(data) {
+	const level = data.progressLevel;
+	if (level === 'ban-phase') {
+		const banner = data.players?.find(p => p.discordId === data.banPhase?.currentBannerDiscordId);
+		if (banner) updatePhaseBar('banning', `${banner.displayName} is banning...`);
+		else updatePhaseBar(null);
+	}
+	else if (level === 'picking-post-result') {
+		const picker = data.players?.find(p => p.discordId === data.currentPickerDiscordId);
+		if (picker) updatePhaseBar('picking', `${picker.displayName} is picking...`);
+		else updatePhaseBar(null);
+	}
+	else if (level === 'playing') {
+		const entry = data.currentChart ? getEntry(data.currentChart) : null;
+		updatePhaseBar('playing', `Playing: ${entry ? entryDisplay(entry) : '...'}`);
+	}
+	else {
+		updatePhaseBar(null);
 	}
 }
 
@@ -375,38 +388,40 @@ function updateReadyState() {
 function updateScoreboard(data) {
 	if (data.players?.[0]) {
 		const p = data.players[0];
-		if (p.displayName ?? p.name) document.getElementById('p1-name').textContent = p.displayName ?? p.name;
-		if (p.name) document.getElementById('p1-label').textContent = p.name;
-		if (p.username) document.getElementById('p1-username').textContent = `@${p.username}`;
+		if (p.displayName) document.getElementById('p1-name').textContent = p.displayName;
+		if (p.discordDisplayName) document.getElementById('p1-label').textContent = p.discordDisplayName;
+		if (p.discordUsername) document.getElementById('p1-username').textContent = `@${p.discordUsername}`;
 		const av = document.getElementById('p1-avatar');
-		if (p.avatar) { av.src = p.avatar; av.style.display = 'block'; }
+		if (p.avatarUrl) { av.src = p.avatarUrl; av.style.display = 'block'; }
 	}
 	if (data.players?.[1]) {
 		const p = data.players[1];
-		if (p.displayName ?? p.name) document.getElementById('p2-name').textContent = p.displayName ?? p.name;
-		if (p.name) document.getElementById('p2-label').textContent = p.name;
-		if (p.username) document.getElementById('p2-username').textContent = `@${p.username}`;
+		if (p.displayName) document.getElementById('p2-name').textContent = p.displayName;
+		if (p.discordDisplayName) document.getElementById('p2-label').textContent = p.discordDisplayName;
+		if (p.discordUsername) document.getElementById('p2-username').textContent = `@${p.discordUsername}`;
 		const av = document.getElementById('p2-avatar');
-		if (p.avatar) { av.src = p.avatar; av.style.display = 'block'; }
+		if (p.avatarUrl) { av.src = p.avatarUrl; av.style.display = 'block'; }
 	}
-	if (data.score) document.getElementById('score-display').textContent = `${data.score[0]} - ${data.score[1]}`;
-	if (data.round) document.getElementById('round-label').textContent = data.round;
-	if (data.bestOf) document.getElementById('bo-label').textContent = `Best of ${data.bestOf}`;
+	const p0pts = data.players?.[0]?.points ?? 0;
+	const p1pts = data.players?.[1]?.points ?? 0;
+	document.getElementById('score-display').textContent = `${p0pts} - ${p1pts}`;
+	if (data.meta?.round) document.getElementById('round-label').textContent = data.meta.round;
+	if (data.meta?.bestOf) document.getElementById('bo-label').textContent = `Best of ${data.meta.bestOf}`;
 }
 
-function updateCurrentChart(chart) {
-	if (!chart) return;
+function updateCurrentChart(entry) {
+	if (!entry) return;
 	const card = document.getElementById('current-chart-card');
 	card.classList.add('active');
 	const thumb = document.getElementById('chart-thumb');
-	const imgSrc = chart.thumbnailUrl ?? chart.cover ?? '';
+	const imgSrc = entry.thumbnailUrl ?? entry.cover ?? '';
 	if (imgSrc) { thumb.src = imgSrc; thumb.style.display = 'block'; }
 	else { thumb.style.display = 'none'; }
-	document.getElementById('chart-title').textContent = chart.title ?? chart.displayName ?? 'Unknown';
-	document.getElementById('chart-artist').textContent = chart.artist ?? '';
-	document.getElementById('chart-charter').textContent = chart.charter ? `charted by ${chart.charter}` : '';
+	document.getElementById('chart-title').textContent = entry.title ?? entry.displayName ?? 'Unknown';
+	document.getElementById('chart-artist').textContent = entry.artist ?? '';
+	document.getElementById('chart-charter').textContent = entry.charter ? `charted by ${entry.charter}` : '';
 	const diff = document.getElementById('chart-difficulty');
-	if (chart.difficulty != null) { diff.style.display = 'block'; diff.textContent = `Diff ${chart.difficulty}`; }
+	if (entry.difficulty != null) { diff.style.display = 'block'; diff.textContent = `Diff ${entry.difficulty}`; }
 	else { diff.style.display = 'none'; }
 }
 
@@ -423,56 +438,48 @@ function renderMapPool() {
 	const grid = document.getElementById('mappool-grid');
 	grid.innerHTML = '';
 
-	// use fullMapPool as the source of truth for what to show
-	// fall back to activePoolNames contents if fullMapPool is empty (e.g. mid-session connect)
-	const source = fullMapPool.length > 0
-		? fullMapPool
-		: [...activePoolNames].map(n => chartDataCache[n] ?? n);
+	if (!mappool.length) return;
 
-	source.forEach(entry => {
-		const name = entryName(entry);
-		const cached = chartDataCache[name] ?? (typeof entry === 'object' ? entry : null);
-		const display = cached ? entryDisplay(cached) : name;
-		const artist = cached?.artist ?? '';
-		const thumb = cached?.thumbnailUrl ?? cached?.cover ?? '';
-
-		const isPlayed = playedChartNames.has(name);
-		const isBanned = !isPlayed && (bannedChartNames.has(name) || (!activePoolNames.has(name) && fullMapPool.length > 0));
-		// during chart play, dim everything except the current chart
-		const isDimmed = chartIsLive && currentChartName && name !== currentChartName;
-		const isCurrent = name === currentChartName;
+	mappool.forEach(entry => {
+		const { csvName, title, artist, thumbnailUrl, cover, displayName, status, result } = entry;
+		const display = title ?? displayName ?? csvName ?? '?';
+		const thumb = thumbnailUrl ?? cover ?? '';
+		const isBanned = status?.banned ?? false;
+		const isPlayed = status?.played ?? false;
+		const isLive = status?.isBeingPlayed ?? false;
+		const isCurrent = csvName === currentChartName;
 
 		const chip = document.createElement('div');
-		const classes = ['map-chip'];
-		if (isPlayed) classes.push('played');
-		else if (isBanned) classes.push('banned');
-		else if (isDimmed) classes.push('dimmed');
-		if (isCurrent) classes.push('current');
-		chip.className = classes.join(' ');
+		chip.className = 'map-chip';
+
+		if (isBanned) chip.classList.add('banned');
+		else if (isPlayed) chip.classList.add('played');
+		else if (isLive || isCurrent) chip.classList.add('active');
 
 		if (thumb) {
 			const img = document.createElement('img');
 			img.className = 'map-chip-thumb';
 			img.src = thumb;
-			img.alt = display;
 			chip.appendChild(img);
 		}
 
-		if (isBanned) {
+		if (isPlayed && result) {
+			const res = document.createElement('div');
+			res.className = 'map-chip-result';
+			const s1 = fmtScore(result.score1, result.fc1, result.pfc1);
+			const s2 = fmtScore(result.score2, result.fc2, result.pfc2);
+			res.textContent = `${s1} / ${s2}`;
+			chip.appendChild(res);
+		}
+		else if (isBanned) {
 			const tag = document.createElement('div');
-			tag.className = 'chip-tag banned-tag';
+			tag.className = 'map-chip-tag';
 			tag.textContent = 'BANNED';
 			chip.appendChild(tag);
 		}
-		else if (isPlayed) {
+		else if (isLive || isCurrent) {
 			const tag = document.createElement('div');
-			tag.className = 'chip-tag played-tag';
-			tag.textContent = 'PLAYED';
-			chip.appendChild(tag);
-		}
-		else if (isCurrent) {
-			const tag = document.createElement('div');
-			tag.className = 'chip-tag current-tag';
+			tag.className = 'map-chip-tag';
 			tag.textContent = chartIsLive ? 'LIVE' : 'PICKED';
 			chip.appendChild(tag);
 		}
@@ -510,28 +517,20 @@ function addFeed(text, cls) {
 }
 
 function hideHeaderAfterDelay() {
-	if (headerHideTimeout) {
-		clearTimeout(headerHideTimeout);
-	}
+	if (headerHideTimeout) clearTimeout(headerHideTimeout);
 	headerHideTimeout = setTimeout(() => {
 		const header = document.getElementById('main-header');
 		const wsDot = document.getElementById('ws-dot');
-		// Only hide if connected
-		if (wsDot.classList.contains('connected')) {
-			header.classList.add('hidden');
-		}
+		if (wsDot.classList.contains('connected')) header.classList.add('hidden');
 	}, 1000);
 }
 
 function showHeader() {
 	const header = document.getElementById('main-header');
 	header.classList.remove('hidden');
-	// Reset the hide timer
 	hideHeaderAfterDelay();
 }
-// Add mouse move listener to show header when mouse moves near top
+
 document.addEventListener('mousemove', (e) => {
-	if (e.clientY < 50) {
-		showHeader();
-	}
+	if (e.clientY < 50) showHeader();
 });

@@ -63,7 +63,14 @@ function startHttpServer() {
 			};
 			res.setHeader('Content-Type', contentTypes[ext] ?? 'application/octet-stream');
 			res.writeHead(200);
-			fs.createReadStream(overlayPath).pipe(res);
+			if (ext === '.html') {
+				const html = fs.readFileSync(overlayPath, 'utf8');
+				const injected = html.replace('<head>', `<head>\n  <script>window.WS_PORT=${process.env.WS_PORT ?? 8080};window.HTTP_PORT=${process.env.HTTP_PORT ?? 8081};</script>`);
+				res.end(injected);
+			}
+			else {
+				fs.createReadStream(overlayPath).pipe(res);
+			}
 			return;
 		}
 
