@@ -32,15 +32,25 @@ function startHttpServer() {
 		const url = new URL(req.url, `http://${req.headers.host}`);
 
 		res.setHeader('Access-Control-Allow-Origin', '*');
+		res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+		res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+		if (req.method === 'OPTIONS') {
+			res.writeHead(204);
+			res.end();
+			return;
+		}
 
 		if (req.method === 'GET' && url.pathname === '/state') {
 			const snapshot = buildStateSnapshot();
-			res.writeHead(200, { 'Content-Type': 'application/json' });
+			res.setHeader('Content-Type', 'application/json');
+			res.writeHead(200);
 			res.end(JSON.stringify(snapshot));
 			return;
 		}
 
-		const overlayPath = path.join(__dirname, '../overlay', url.pathname === '/' ? 'index.html' : url.pathname);
+		const strippedPath = url.pathname.replace(/^\/overlay(\/|$)/, '/') || '/';
+		const overlayPath = path.join(__dirname, '../overlay', strippedPath === '/' ? 'index.html' : strippedPath);
 		if (fs.existsSync(overlayPath)) {
 			const ext = path.extname(overlayPath);
 			const contentTypes = {
@@ -51,7 +61,8 @@ function startHttpServer() {
 				'.jpg': 'image/jpeg',
 				'.svg': 'image/svg+xml',
 			};
-			res.writeHead(200, { 'Content-Type': contentTypes[ext] ?? 'application/octet-stream' });
+			res.setHeader('Content-Type', contentTypes[ext] ?? 'application/octet-stream');
+			res.writeHead(200);
 			fs.createReadStream(overlayPath).pipe(res);
 			return;
 		}
