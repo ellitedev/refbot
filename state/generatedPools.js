@@ -93,16 +93,19 @@ async function loadGeneratedPoolsFromDB() {
 		};
 	});
 
-	console.log('loadGeneratedPoolsFromDB - Reconstructed pools:',
-		generatedPools.map(b => ({
-			name: b.name,
-			rounds: b.rounds.map(r => ({
-				name: r.name,
-				matchCount: r.matches.length,
-				firstMatchCharts: r.matches[0]?.charts?.length || 0,
-			})),
-		})),
-	);
+
+	// WE DON'T HAVE TO LOG THIS ANYMORE
+
+	// console.log('loadGeneratedPoolsFromDB - Reconstructed pools:',
+	// 	generatedPools.map(b => ({
+	// 		name: b.name,
+	// 		rounds: b.rounds.map(r => ({
+	// 			name: r.name,
+	// 			matchCount: r.matches.length,
+	// 			firstMatchCharts: r.matches[0]?.charts?.length || 0,
+	// 		})),
+	// 	})),
+	// );
 }
 
 function getGeneratedPools() {
