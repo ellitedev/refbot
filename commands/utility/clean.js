@@ -43,6 +43,16 @@ module.exports = {
 		const activeState = getMatchState();
 		const activeId = activeState?._id?.toString();
 
+		// Check if there's a match in memory but not in database
+		if (activeState && !activeId) {
+			// This is a rare case - match in memory but not in DB
+			await interaction.reply({
+				content: '⚠️ Found a match in memory but not in database. Use `/forceclean` to clear the memory state.',
+				flags: MessageFlags.Ephemeral,
+			});
+			return;
+		}
+
 		const stuckMatches = await MatchModel.find({
 			event: event._id,
 			status: { $in: ['in_progress', 'restarted'] },

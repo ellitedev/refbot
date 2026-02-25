@@ -103,32 +103,63 @@ async function startPickPhase(interaction, message, state) {
 	const pickCol = message.createMessageComponentCollector({
 		componentType: ComponentType.StringSelect,
 		filter: (i) => i.customId === 'mapSelect',
-		max: 1,
+		time: 300000,
 	});
 
 	state._activeCollector = pickCol;
 
 	pickCol.on('collect', async (i) => {
 		if (i.user.id !== state.currentPicker.id) {
-			await i.reply({ content: 'It\'s not your turn to pick!', flags: MessageFlags.Ephemeral });
+			await i.reply({
+				content: `It's not your turn to pick! It's **${state.currentPicker.displayName || state.currentPicker.username}**'s turn.`,
+				flags: MessageFlags.Ephemeral,
+			});
 			return;
 		}
 
-		await i.deferUpdate();
-		const picked = state.currentMapPool.find((m) => m.name === i.values[0]) ?? i.values[0];
-		const pickedBy = state.currentPicker;
-		state.currentChart = picked;
-		await broadcastMatchState('match.pick', state, {
-			pickedByDiscordId: pickedBy.id,
-		});
-		pickCol.stop();
-		state._activeCollector = null;
+		try {
+			await i.deferUpdate();
+			const picked = state.currentMapPool.find((m) => m.name === i.values[0]) ?? i.values[0];
+			const pickedBy = state.currentPicker;
+			state.currentChart = picked;
 
-		await startReadyCheck(interaction, picked, state);
+			// Stop the collector before broadcasting
+			pickCol.stop();
+			state._activeCollector = null;
+
+			await broadcastMatchState('match.pick', state, {
+				pickedByDiscordId: pickedBy.id,
+			});
+
+			await saveMatchState();
+			await startReadyCheck(interaction, picked, state);
+		}
+		catch (error) {
+			console.error('Error in pick phase:', error);
+			await interaction.followUp({
+				content: '❌ An error occurred during pick phase. A referee may need to restart.',
+				flags: MessageFlags.Ephemeral,
+			});
+		}
+	});
+
+	pickCol.on('end', async (collected, reason) => {
+		if (reason === 'time' && state._activeCollector === pickCol) {
+			state._activeCollector = null;
+			console.log('Pick phase timed out');
+
+			// Notify that the pick timed out
+			await interaction.followUp({
+				content: '⚠️ Pick phase timed out. A referee needs to restart the match.',
+				flags: MessageFlags.Ephemeral,
+			});
+
+			// Don't clear state automatically - let referee decide
+		}
 	});
 }
 
-async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber, onReject }) {
+async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber }) {
 	const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
 	const otherPlayer = randomPlayer !== player1 ? player1 : player2;
 
@@ -173,6 +204,18 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 		const banSelectCol = banMessage.createMessageComponentCollector({
 			componentType: ComponentType.StringSelect,
 			filter: (k) => k.customId === 'mapBan',
+			time: 300000,
+		});
+
+		banSelectCol.on('end', async (collected, reason) => {
+			if (reason === 'time' && state._activeCollector === banSelectCol) {
+				state._activeCollector = null;
+				console.log('Ban phase timed out');
+				await interaction.followUp({
+					content: '⚠️ Ban phase timed out. A referee needs to restart the match.',
+					flags: MessageFlags.Ephemeral,
+				});
+			}
 		});
 
 		banSelectCol.on('collect', async (k) => {
