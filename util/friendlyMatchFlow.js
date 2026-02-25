@@ -1,72 +1,92 @@
-const { MessageFlags, ComponentType, ContainerBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder } = require('discord.js');
-const { saveFriendlyState } = require('../state/friendlyMatch.js');
-const ChartModel = require('../models/Chart.js');
+const {
+	ComponentType,
+	ContainerBuilder,
+	ButtonBuilder,
+	ButtonStyle,
+	StringSelectMenuBuilder,
+	StringSelectMenuOptionBuilder,
+	MediaGalleryBuilder,
+	MediaGalleryItemBuilder,
+	MessageFlags,
+} = require('discord.js');
+const {
+	saveFriendlyState,
+	broadcastFriendlyState,
+	pushFriendlyFeed,
+	buildFriendlyMappoolEntry,
+} = require('../state/friendlyMatch.js');
 
 const accentColor = 0x40ffa0;
 
 function chartName(entry) {
-	return typeof entry === 'string' ? entry : entry.name;
+	return typeof entry === 'string' ? entry : (entry.csvName ?? entry.name ?? entry.displayName ?? '?');
+}
+
+function chartDisplay(entry) {
+	return typeof entry === 'string' ? entry : (entry.displayName ?? entry.title ?? entry.csvName ?? '?');
+}
+
+function getPoolEntry(state, csvName) {
+	return state.mappool.find(e => e.csvName === csvName || chartName(e) === csvName);
+}
+
+function getCurrentPool(state) {
+	return state.mappool.filter(e => e.status.inCurrentPool && !e.status.banned && !e.status.played);
 }
 
 async function getCoverUrl(chart, state) {
+	if (typeof chart === 'object' && chart.cover) return chart.cover;
 	const name = chartName(chart);
-	if (!name) return null;
-	try {
-		const songId = (typeof chart === 'object' ? chart.songId : null) ?? state?.chartSongIds?.[name] ?? null;
-		const doc = songId
-			? await ChartModel.findOne({ songId })
-			: await ChartModel.findOne({ csvName: name });
-		return doc?.cover ?? null;
-	}
-	catch {
-		return null;
-	}
+	const entry = state.mappool.find(e => chartName(e) === name);
+	return entry?.cover ?? entry?.thumbnailUrl ?? null;
 }
 
-function getScoreStr(state) {
-	return `**${state.playerNames[0]}** ${state.score[0]} - ${state.score[1]} **${state.playerNames[1]}** *(Best of ${state.bestOf})*`;
+function getPickerDisplayName(state) {
+	const pickerSlot = state.currentPickerDiscordId;
+	if (!pickerSlot) return state.players[0]?.displayName ?? 'Player 1';
+	const p = state.players.find(p => p.displayName === pickerSlot);
+	return p?.displayName ?? pickerSlot;
 }
 
-function getBanContainer(banner, currentMapPool, state) {
-	const mapPoolStr = currentMapPool.map((m) => `- ${chartName(m)}`).join('\n');
-	const options = currentMapPool.map((m) => new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)));
+function getBanContainer(bannerName, pool, state) {
+	const options = pool.map((c) =>
+		new StringSelectMenuOptionBuilder()
+			.setLabel(chartDisplay(c).substring(0, 100))
+			.setValue(chartName(c)),
+	);
 
 	return new ContainerBuilder()
 		.setAccentColor(accentColor)
-		.addTextDisplayComponents((t) => t.setContent(getScoreStr(state)))
-		.addSeparatorComponents((s) => s)
-		.addTextDisplayComponents((t) => t.setContent(`**Map Pool:**\n${mapPoolStr}`))
-		.addSeparatorComponents((s) => s)
-		.addTextDisplayComponents((t) => t.setContent(`**${banner}**, it is your turn to ban! (tell your referee)`))
+		.addTextDisplayComponents((t) =>
+			t.setContent(`## Friendly: ${state.players[0].displayName} vs ${state.players[1].displayName}`),
+		)
+		.addTextDisplayComponents((t) => t.setContent(`**${bannerName}**, ban a chart from the pool:`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
 				new StringSelectMenuBuilder()
 					.setCustomId('friendly_ban')
-					.setPlaceholder('Select a map to ban...')
+					.setPlaceholder('Select a chart to ban...')
 					.addOptions(options),
 			),
 		);
 }
 
-function getPickContainer(picker, currentMapPool, state) {
-	const mapPoolStr = currentMapPool.map((m) => `- ${chartName(m)}`).join('\n');
+function getPickContainer(pickerName, pool, state) {
+	const options = pool.map((c) =>
+		new StringSelectMenuOptionBuilder()
+			.setLabel(chartDisplay(c).substring(0, 100))
+			.setValue(chartName(c)),
+	);
 
 	const container = new ContainerBuilder()
 		.setAccentColor(accentColor)
-		.addTextDisplayComponents((t) => t.setContent(getScoreStr(state)))
-		.addSeparatorComponents((s) => s)
-		.addTextDisplayComponents((t) => t.setContent(`**Map Pool:**\n${mapPoolStr}`))
-		.addSeparatorComponents((s) => s);
-
-	if (currentMapPool.length === 1) {
-		container.addTextDisplayComponents((t) =>
-			t.setContent(`The map to be played is **${chartName(currentMapPool[0])}**!`),
+		.addTextDisplayComponents((t) =>
+			t.setContent(`## Friendly: ${state.players[0].displayName} vs ${state.players[1].displayName}`),
 		);
-	}
-	else {
-		const options = currentMapPool.map((m) => new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)));
+
+	if (options.length > 0) {
 		container
-			.addTextDisplayComponents((t) => t.setContent(`**${picker}**, it is your turn to pick! (tell your referee)`))
+			.addTextDisplayComponents((t) => t.setContent(`**${pickerName}**, pick a chart to play:`))
 			.addActionRowComponents((row) =>
 				row.setComponents(
 					new StringSelectMenuBuilder()
@@ -76,11 +96,16 @@ function getPickContainer(picker, currentMapPool, state) {
 				),
 			);
 	}
+	else {
+		container.addTextDisplayComponents((t) =>
+			t.setContent('No charts remaining in the pool! (tell your referee)'),
+		);
+	}
 
 	return container;
 }
 
-function getReadyCheckContainer(chart, p1Name, p2Name, p1Ready, p2Ready, coverUrl = null) {
+function getReadyCheckContainer(chartLabel, p1Name, p2Name, p1Ready, p2Ready, coverUrl = null) {
 	const p1Status = p1Ready ? '✅' : '⬜';
 	const p2Status = p2Ready ? '✅' : '⬜';
 
@@ -91,7 +116,7 @@ function getReadyCheckContainer(chart, p1Name, p2Name, p1Ready, p2Ready, coverUr
 		);
 	}
 	container
-		.addTextDisplayComponents((t) => t.setContent(`**${chartName(chart)}** will be played!`))
+		.addTextDisplayComponents((t) => t.setContent(`**${chartLabel}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent(`${p1Status} ${p1Name}\n${p2Status} ${p2Name}`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
@@ -114,11 +139,12 @@ async function startFriendlyReadyCheck(state, chart) {
 	const coverUrl = await getCoverUrl(chart, state);
 	const msg = state.publicMessage;
 	const name = chartName(chart);
-	const songId = (typeof chart === 'object' ? chart.songId : null) ?? state.chartSongIds?.[name] ?? null;
-	const chartLink = songId ? `[${name}](https://spinsha.re/song/${songId})` : `**${name}**`;
+	const entry = state.mappool.find(e => chartName(e) === name);
+	const songId = entry?.songId ?? null;
+	const chartLabel = songId ? `[${chartDisplay(chart)}](https://spinsha.re/song/${songId})` : `**${chartDisplay(chart)}**`;
 
 	await msg.edit({
-		components: [getReadyCheckContainer(chartLink, state.playerNames[0], state.playerNames[1], p1Ready, p2Ready, coverUrl)],
+		components: [getReadyCheckContainer(chartLabel, state.players[0].displayName, state.players[1].displayName, p1Ready, p2Ready, coverUrl)],
 		flags: MessageFlags.IsComponentsV2,
 	});
 
@@ -146,8 +172,14 @@ async function startFriendlyReadyCheck(state, chart) {
 		if (p1Ready && p2Ready) {
 			readyCol.stop();
 			state._activeCollector = null;
-			state.currentChart = chart;
+			state.currentChart = name;
+
+			const entry = getPoolEntry(state, name);
+			if (entry) entry.status.isBeingPlayed = true;
+
 			await saveFriendlyState(state.refUserId);
+			pushFriendlyFeed(state, 'chartStart', `Both players ready! Playing: ${chartDisplay(chart)}`);
+			broadcastFriendlyState('friendly.chartStart', state);
 
 			const countdownContainer = new ContainerBuilder().setAccentColor(accentColor);
 			if (coverUrl) {
@@ -156,14 +188,18 @@ async function startFriendlyReadyCheck(state, chart) {
 				);
 			}
 			countdownContainer
-				.addTextDisplayComponents((t) => t.setContent(`${chartLink} will be played!`))
+				.addTextDisplayComponents((t) => t.setContent(`${chartLabel} will be played!`))
 				.addTextDisplayComponents((t) => t.setContent('Both players ready! Starting countdown...'));
 
 			await msg.edit({ components: [countdownContainer], flags: MessageFlags.IsComponentsV2 });
 		}
 		else {
+			broadcastFriendlyState('friendly.playerReady', state, {
+				p1Ready,
+				p2Ready,
+			});
 			await msg.edit({
-				components: [getReadyCheckContainer(chartLink, state.playerNames[0], state.playerNames[1], p1Ready, p2Ready, coverUrl)],
+				components: [getReadyCheckContainer(chartLabel, state.players[0].displayName, state.players[1].displayName, p1Ready, p2Ready, coverUrl)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 		}
@@ -171,59 +207,85 @@ async function startFriendlyReadyCheck(state, chart) {
 }
 
 async function startFriendlyPickPhase(interaction, state) {
-	if (state.hasBans && state.currentMapPool.length > state.bestOf) {
-		const totalBans = state.currentMapPool.length - 1;
-		const banOrder = Array.from({ length: totalBans }, (_, i) => state.playerNames[i % 2]);
-		let banTurn = 0;
-		let currentMapPool = [...state.currentMapPool];
+	if (state.hasBans) {
+		const pool = getCurrentPool(state);
+		const wantedBans = pool.length - 1;
 
-		state.publicMessage = await interaction.followUp({
-			components: [getBanContainer(banOrder[banTurn], currentMapPool, state)],
-			flags: MessageFlags.IsComponentsV2,
-		});
+		if (wantedBans > 0) {
+			const banOrder = Array.from({ length: wantedBans }, (_, i) => state.players[i % 2].displayName);
+			let banTurn = 0;
 
-		const banCol = state.publicMessage.createMessageComponentCollector({
-			componentType: ComponentType.StringSelect,
-			filter: (k) => k.customId === 'friendly_ban',
-		});
+			state.mappool.forEach(e => { e.status.inCurrentPool = true; });
 
-		await new Promise((resolve) => {
-			banCol.on('collect', async (k) => {
-				await k.deferUpdate();
-				currentMapPool = currentMapPool.filter((m) => chartName(m) !== k.values[0]);
-				banTurn++;
-
-				if (banTurn >= totalBans) {
-					banCol.stop();
-					state.currentMapPool = [...currentMapPool];
-					state.currentChart = currentMapPool[0];
-					await saveFriendlyState(state.refUserId);
-					resolve();
-				}
-				else {
-					await state.publicMessage.edit({
-						components: [getBanContainer(banOrder[banTurn], currentMapPool, state)],
-						flags: MessageFlags.IsComponentsV2,
-					});
-				}
+			state.publicMessage = await interaction.followUp({
+				components: [getBanContainer(banOrder[banTurn], getCurrentPool(state), state)],
+				flags: MessageFlags.IsComponentsV2,
 			});
-		});
 
-		await startFriendlyReadyCheck(state, state.currentChart);
+			const banCol = state.publicMessage.createMessageComponentCollector({
+				componentType: ComponentType.StringSelect,
+				filter: (k) => k.customId === 'friendly_ban',
+			});
+
+			await new Promise((resolve) => {
+				banCol.on('collect', async (k) => {
+					await k.deferUpdate();
+					const bannedName = k.values[0];
+					const entry = getPoolEntry(state, bannedName);
+					if (entry) {
+						entry.status.banned = true;
+						entry.status.bannedAt = new Date().toISOString();
+						entry.status.inCurrentPool = false;
+					}
+					banTurn++;
+
+					pushFriendlyFeed(state, 'ban', `${banOrder[banTurn - 1]} banned ${bannedName}`);
+					await saveFriendlyState(state.refUserId);
+					broadcastFriendlyState('friendly.ban', state, { bannedChart: bannedName, bannedByName: banOrder[banTurn - 1] });
+
+					if (banTurn >= wantedBans) {
+						banCol.stop();
+
+						const firstPickerName = state.players[0].displayName;
+						state.currentPickerDiscordId = firstPickerName;
+
+						pushFriendlyFeed(state, 'pickPhaseStart', `Bans complete - ${firstPickerName} picks first`);
+						broadcastFriendlyState('friendly.pickPhaseStart', state);
+
+						resolve();
+					}
+					else {
+						await state.publicMessage.edit({
+							components: [getBanContainer(banOrder[banTurn], getCurrentPool(state), state)],
+							flags: MessageFlags.IsComponentsV2,
+						});
+					}
+				});
+			});
+
+			await runPickPhase(state, false, interaction);
+			return;
+		}
 	}
-	else {
-		const pickerName = state.currentPicker ?? state.playerNames[0];
-		state.publicMessage = await interaction.followUp({
-			components: [getPickContainer(pickerName, state.currentMapPool, state)],
-			flags: MessageFlags.IsComponentsV2,
-		});
-		await runPickPhase(state, true);
-	}
+
+	const firstPickerName = state.players[0].displayName;
+	state.currentPickerDiscordId = firstPickerName;
+
+	state.publicMessage = await interaction.followUp({
+		components: [getPickContainer(firstPickerName, getCurrentPool(state), state)],
+		flags: MessageFlags.IsComponentsV2,
+	});
+
+	pushFriendlyFeed(state, 'pickPhaseStart', `${firstPickerName} picks first`);
+	broadcastFriendlyState('friendly.pickPhaseStart', state);
+
+	await runPickPhase(state, true);
 }
 
-async function runPickPhase(state, skipEdit = false) {
+async function runPickPhase(state, skipEdit = false, _interaction = null) {
 	const msg = state.publicMessage;
-	const pickerName = state.currentPicker ?? state.playerNames[0];
+	const pickerName = state.currentPickerDiscordId ?? state.players[0].displayName;
+	const pool = getCurrentPool(state);
 
 	if (state._activeCollector) {
 		state._activeCollector.stop();
@@ -232,7 +294,7 @@ async function runPickPhase(state, skipEdit = false) {
 
 	if (!skipEdit) {
 		await msg.edit({
-			components: [getPickContainer(pickerName, state.currentMapPool, state)],
+			components: [getPickContainer(pickerName, pool, state)],
 			flags: MessageFlags.IsComponentsV2,
 		});
 	}
@@ -247,11 +309,16 @@ async function runPickPhase(state, skipEdit = false) {
 
 	pickCol.on('collect', async (i) => {
 		await i.deferUpdate();
-		const picked = state.currentMapPool.find((m) => chartName(m) === i.values[0]) ?? i.values[0];
-		state.currentChart = picked;
+		const pickedName = i.values[0];
+		const entry = getPoolEntry(state, pickedName);
+		state.currentChart = pickedName;
+
+		pushFriendlyFeed(state, 'pick', `${pickerName} picked ${chartDisplay(entry ?? pickedName)}`);
+		broadcastFriendlyState('friendly.pick', state, { pickedByName: pickerName });
+
 		pickCol.stop();
-		await startFriendlyReadyCheck(state, picked);
+		await startFriendlyReadyCheck(state, entry ?? pickedName);
 	});
 }
 
-module.exports = { startFriendlyPickPhase, runPickPhase };
+module.exports = { startFriendlyPickPhase, runPickPhase, getCurrentPool, getPoolEntry, chartName, chartDisplay };
