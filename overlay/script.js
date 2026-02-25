@@ -79,7 +79,10 @@ function connect() {
 			const snapshot = await res.json();
 			if (snapshot) handleMessage(snapshot);
 		}
-		catch { }
+		catch (error) {
+			// Silently fail - initial state fetch is optional
+			console.debug('Failed to fetch initial state:', error);
+		}
 	};
 	ws.onclose = () => {
 		setStatus('disconnected');
@@ -90,8 +93,12 @@ function connect() {
 	};
 	ws.onerror = () => setStatus('error');
 	ws.onmessage = (e) => {
-		try { handleMessage(JSON.parse(e.data)); }
-		catch { }
+		try {
+			handleMessage(JSON.parse(e.data));
+		}
+		catch (error) {
+			console.error('Failed to parse message:', error);
+		}
 	};
 }
 
