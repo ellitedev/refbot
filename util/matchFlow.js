@@ -36,7 +36,7 @@ function getPlayerNames(state) {
 }
 
 function getCurrentPool(state) {
-	if (state.progressLevel === 'ban-phase') {
+	if (state.progressLevel === 'ban-phase' || state.progressLevel === 'ready-check') {
 		return state.mappool.filter(c => !c.status.banned && !c.status.played);
 	}
 	return state.mappool.filter(c => !c.status.played);
@@ -236,6 +236,7 @@ async function startBanPhase(interaction, { player1, player2, player1Name, playe
 		state._interaction = interaction;
 		discordUsersMap.set(player1.id, player1);
 		discordUsersMap.set(player2.id, player2);
+		state._discordUsersMap = discordUsersMap;
 
 		await broadcastMatchState('match.start', state);
 		await broadcastMatchState('match.banOrderDecided', state, {

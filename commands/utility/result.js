@@ -84,7 +84,9 @@ module.exports = {
 
 		const currentPool = getCurrentPool(updatedState);
 		const nextPickerDiscordId = updatedState.currentPickerDiscordId;
-		const nextPickerDiscordUser = state._discordUsersMap?.get(nextPickerDiscordId);
+		const nextPickerStatePlayer = updatedState.players.find(p => p.discordId === nextPickerDiscordId);
+		const nextPickerDiscordUser = state._discordUsersMap?.get(nextPickerDiscordId)
+			?? { username: nextPickerStatePlayer?.discordDisplayName ?? nextPickerStatePlayer?.displayName ?? '?' };
 
 		await state._interaction.editReply({
 			content: '',
@@ -93,6 +95,6 @@ module.exports = {
 		});
 
 		const pickMessage = await state._interaction.fetchReply();
-		startPickPhase(state.interaction, pickMessage, updatedState, state._discordUsersMap);
+		startPickPhase(state._interaction, pickMessage, updatedState, state._discordUsersMap ?? new Map());
 	},
 };
