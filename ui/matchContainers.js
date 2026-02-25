@@ -2,8 +2,19 @@ const { ContainerBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, S
 
 const accentColor = 0x40ffa0;
 
-function chartName(entry) {
-	return typeof entry === 'string' ? entry : entry.name;
+function playerName(p) {
+	if (!p) return '?';
+	return p.username ?? p.displayName ?? p.discordDisplayName ?? '?';
+}
+
+function chartLabel(entry) {
+	if (typeof entry === 'string') return entry;
+	return entry.displayName ?? entry.csvName ?? entry.name ?? '?';
+}
+
+function chartId(entry) {
+	if (typeof entry === 'string') return entry;
+	return entry.csvName ?? entry.name ?? '?';
 }
 
 function getCheckInContainer(players) {
@@ -45,8 +56,8 @@ function getRefApprovalContainer(p1, p2, playerNames) {
 function getBanOrderContainer(randomPlayer) {
 	return new ContainerBuilder()
 		.setAccentColor(accentColor)
-		.addTextDisplayComponents((t) => t.setContent(`**${randomPlayer.username}** has been randomly chosen!`))
-		.addTextDisplayComponents((t) => t.setContent(`**${randomPlayer.username}**, would you like to ban first or second?`))
+		.addTextDisplayComponents((t) => t.setContent(`**${playerName(randomPlayer)}** has been randomly chosen!`))
+		.addTextDisplayComponents((t) => t.setContent(`**${playerName(randomPlayer)}**, would you like to ban first or second?`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
 				new ButtonBuilder().setCustomId('first').setLabel('First').setStyle(ButtonStyle.Primary),
@@ -58,10 +69,10 @@ function getBanOrderContainer(randomPlayer) {
 function getBanContainer(nextBanner, currentMapPool, score, playerNames, bestOf) {
 	const scoreStr = `**${playerNames[0]}** ${score[0]} - ${score[1]} **${playerNames[1]}** *(Best of ${bestOf})*`;
 	let mapPoolStr = '**Map Pool:**';
-	for (const map of currentMapPool) mapPoolStr += `\n- ${chartName(map)}`;
+	for (const map of currentMapPool) mapPoolStr += `\n- ${chartLabel(map)}`;
 
 	const mapPoolOptions = currentMapPool.map((m) =>
-		new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)),
+		new StringSelectMenuOptionBuilder().setLabel(chartLabel(m)).setValue(chartId(m)),
 	);
 
 	return new ContainerBuilder()
@@ -70,7 +81,7 @@ function getBanContainer(nextBanner, currentMapPool, score, playerNames, bestOf)
 		.addSeparatorComponents((s) => s)
 		.addTextDisplayComponents((t) => t.setContent(mapPoolStr))
 		.addSeparatorComponents((s) => s)
-		.addTextDisplayComponents((t) => t.setContent(`**${nextBanner.username}**, it is your turn to ban!`))
+		.addTextDisplayComponents((t) => t.setContent(`**${playerName(nextBanner)}**, it is your turn to ban!`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
 				new StringSelectMenuBuilder()
@@ -84,7 +95,7 @@ function getBanContainer(nextBanner, currentMapPool, score, playerNames, bestOf)
 function getPickContainer(nextPicker, currentMapPool, score, playerNames, bestOf) {
 	const scoreStr = `**${playerNames[0]}** ${score[0]} - ${score[1]} **${playerNames[1]}** *(Best of ${bestOf})*`;
 	let mapPoolStr = '**Map Pool:**';
-	for (const map of currentMapPool) mapPoolStr += `\n- ${chartName(map)}`;
+	for (const map of currentMapPool) mapPoolStr += `\n- ${chartLabel(map)}`;
 
 	const container = new ContainerBuilder()
 		.setAccentColor(accentColor)
@@ -95,15 +106,15 @@ function getPickContainer(nextPicker, currentMapPool, score, playerNames, bestOf
 
 	if (currentMapPool.length === 1) {
 		container.addTextDisplayComponents((t) =>
-			t.setContent(`The map to be played is **${chartName(currentMapPool[0])}**!`),
+			t.setContent(`The map to be played is **${chartLabel(currentMapPool[0])}**!`),
 		);
 	}
 	else {
 		const mapPoolOptions = currentMapPool.map((m) =>
-			new StringSelectMenuOptionBuilder().setLabel(chartName(m)).setValue(chartName(m)),
+			new StringSelectMenuOptionBuilder().setLabel(chartLabel(m)).setValue(chartId(m)),
 		);
 		container
-			.addTextDisplayComponents((t) => t.setContent(`**${nextPicker.username}**, it is your turn to pick!`))
+			.addTextDisplayComponents((t) => t.setContent(`**${playerName(nextPicker)}**, it is your turn to pick!`))
 			.addActionRowComponents((row) =>
 				row.setComponents(
 					new StringSelectMenuBuilder()
@@ -137,7 +148,7 @@ function getReadyCheckContainer(chart, p1, p2, p1Ready, p2Ready, initialPing = f
 	}
 
 	container
-		.addTextDisplayComponents((t) => t.setContent(`${pingLine}**${chartName(chart)}** will be played!`))
+		.addTextDisplayComponents((t) => t.setContent(`${pingLine}**${chartLabel(chart)}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent(`${p1Status} ${p1.username}\n${p2Status} ${p2.username}`))
 		.addActionRowComponents((row) =>
 			row.setComponents(
@@ -161,7 +172,7 @@ function getCountdownContainer(chart, coverUrl = null) {
 	}
 
 	container
-		.addTextDisplayComponents((t) => t.setContent(`**${chartName(chart)}** will be played!`))
+		.addTextDisplayComponents((t) => t.setContent(`**${chartLabel(chart)}** will be played!`))
 		.addTextDisplayComponents((t) => t.setContent('Both players ready! Starting countdown...'));
 
 	return container;
@@ -170,7 +181,7 @@ function getCountdownContainer(chart, coverUrl = null) {
 function getWinnerContainer(winner, score, playerNames, bestOf) {
 	return new ContainerBuilder()
 		.setAccentColor(accentColor)
-		.addTextDisplayComponents((t) => t.setContent(`## 🏆 ${winner.username} wins the match!`))
+		.addTextDisplayComponents((t) => t.setContent(`## 🏆 ${playerName(winner)} wins the match!`))
 		.addTextDisplayComponents((t) =>
 			t.setContent(`**Final Score:** ${playerNames[0]} ${score[0]} - ${score[1]} ${playerNames[1]} *(Best of ${bestOf})*`),
 		);

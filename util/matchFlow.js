@@ -1,56 +1,80 @@
-const { MessageFlags, ComponentType } = require('discord.js');
-const { getReadyCheckContainer, getCountdownContainer, getBanOrderContainer, getBanContainer, getPickContainer } = require('../ui/matchContainers.js');
+const { ComponentType } = require('discord.js');
+const { MessageFlags } = require('discord.js');
+const {
+	initMatchState,
+	banChart,
+	pickChart,
+	setPlayerReady,
+	saveMatchState,
+	getMatchState,
+} = require('../state/match.js');
 const { broadcastMatchState } = require('./broadcastMatch.js');
-const { initMatchState, saveMatchState } = require('../state/match.js');
-const ChartModel = require('../models/Chart.js');
+const {
+	getBanOrderContainer,
+	getBanContainer,
+	getPickContainer,
+	getReadyCheckContainer,
+	getCountdownContainer,
+} = require('../ui/matchContainers.js');
 
-async function getCoverUrl(chart) {
-	if (!chart) return null;
-	try {
-		const songId = typeof chart === 'string' ? null : (chart.songId ?? null);
-		const name = typeof chart === 'string' ? chart : chart.name;
-		const doc = songId
-			? await ChartModel.findOne({ songId })
-			: await ChartModel.findOne({ csvName: name });
-		return doc?.cover ?? null;
-	}
-	catch {
-		return null;
-	}
+function chartDisplayName(entry) {
+	if (typeof entry === 'string') return entry;
+	return entry.displayName ?? entry.csvName ?? entry.name ?? '?';
 }
 
-async function startReadyCheck(interaction, chart, state) {
-	let p1Ready = false;
-	let p2Ready = false;
+function chartId(entry) {
+	if (typeof entry === 'string') return entry;
+	return entry.csvName ?? entry.name ?? '?';
+}
 
-	if (state._activeCollector) {
-		state._activeCollector.stop();
-		state._activeCollector = null;
+function getScore(state) {
+	return [state.players[0].points, state.players[1].points];
+}
+
+function getPlayerNames(state) {
+	return [state.players[0].displayName, state.players[1].displayName];
+}
+
+function getCurrentPool(state) {
+	if (state.progressLevel === 'ban-phase') {
+		return state.mappool.filter(c => !c.status.banned && !c.status.played);
 	}
+	return state.mappool.filter(c => !c.status.played);
+}
 
-	const coverUrl = await getCoverUrl(chart);
+function getPlayerByDiscordId(state, discordId) {
+	return state.players.find(p => p.discordId === discordId) ?? null;
+}
 
-	const readyMsg = await interaction.editReply({
-		components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, true, null, coverUrl)],
-		flags: MessageFlags.IsComponentsV2,
-	});
+function getDiscordUserFromState(state, slot, discordUsersMap) {
+	const player = state.players[slot - 1];
+	return discordUsersMap.get(player.discordId) ?? null;
+}
+
+async function startReadyCheck(interaction, message, csvName, state, discordUsersMap) {
+	const entry = state.mappool.find(c => c.csvName === csvName);
+	const coverUrl = entry?.thumbnailUrl ?? entry?.cover ?? null;
+	const chart = entry ?? { csvName, displayName: csvName };
+
+	const p1DiscordUser = discordUsersMap.get(state.players[0].discordId);
+	const p2DiscordUser = discordUsersMap.get(state.players[1].discordId);
 
 	const readied = new Set();
 
-	const readyCol = readyMsg.createMessageComponentCollector({
+	await message.edit({
+		components: [getReadyCheckContainer(chart, p1DiscordUser, p2DiscordUser, false, false, true, null, coverUrl)],
+		flags: MessageFlags.IsComponentsV2,
+	});
+
+	const readyCol = message.createMessageComponentCollector({
 		componentType: ComponentType.Button,
-		filter: (j) => j.customId === 'ready',
-		max: 2,
+		filter: (j) => (j.user.id === state.players[0].discordId || j.user.id === state.players[1].discordId) && j.customId === 'ready',
+		time: 300000,
 	});
 
 	state._activeCollector = readyCol;
 
 	readyCol.on('collect', async (j) => {
-		if (j.user.id !== state.player1.id && j.user.id !== state.player2.id) {
-			await j.reply({ content: 'You are not a player in this match!', flags: MessageFlags.Ephemeral });
-			return;
-		}
-
 		if (readied.has(j.user.id)) {
 			await j.reply({ content: 'You\'re already ready!', flags: MessageFlags.Ephemeral });
 			return;
@@ -59,46 +83,70 @@ async function startReadyCheck(interaction, chart, state) {
 		readied.add(j.user.id);
 		await j.deferUpdate();
 
-		if (j.user.id === state.player1.id) p1Ready = true;
-		else p2Ready = true;
+		const allReady = await setPlayerReady(j.user.id);
+		const updatedState = getMatchState();
+		const p1Ready = updatedState.players[0].ready;
+		const p2Ready = updatedState.players[1].ready;
 
-		if (p1Ready && p2Ready) {
+		if (allReady) {
 			readyCol.stop();
 			state._activeCollector = null;
-			state.currentChart = chart;
-			await broadcastMatchState('match.chartStart', state);
-			await interaction.editReply({
+
+			// CRITICAL FIX: Update progress level to 'playing'
+			updatedState.progressLevel = 'playing';
+			await saveMatchState();
+
+			await broadcastMatchState('match.chartStart', updatedState);
+			await message.edit({
 				components: [getCountdownContainer(chart, coverUrl)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 		}
 		else {
-			const unreadyPlayer = !p1Ready ? state.player1 : state.player2;
-			await broadcastMatchState('match.playerReady', state, {
-				p1Ready,
-				p2Ready,
-			});
-			await interaction.editReply({
-				components: [getReadyCheckContainer(chart, state.player1, state.player2, p1Ready, p2Ready, false, unreadyPlayer, coverUrl)],
+			const unreadyDiscordUser = !p1Ready ? p1DiscordUser : p2DiscordUser;
+			await broadcastMatchState('match.playerReady', updatedState);
+			await message.edit({
+				components: [getReadyCheckContainer(chart, p1DiscordUser, p2DiscordUser, p1Ready, p2Ready, false, unreadyDiscordUser, coverUrl)],
 				flags: MessageFlags.IsComponentsV2,
+			});
+		}
+	});
+
+	readyCol.on('end', async (collected, reason) => {
+		if (reason === 'time' && state._activeCollector === readyCol) {
+			state._activeCollector = null;
+			await interaction.followUp({
+				content: '⚠️ Ready check timed out. A referee needs to restart the match.',
+				flags: MessageFlags.Ephemeral,
 			});
 		}
 	});
 }
 
-async function startPickPhase(interaction, message, state) {
+async function startPickPhase(interaction, message, state, discordUsersMap = new Map()) {
 	if (state._activeCollector) {
 		state._activeCollector.stop();
 		state._activeCollector = null;
 	}
 
-	if (state.currentMapPool.length === 1) {
-		const chart = state.currentMapPool[0];
-		state.currentChart = chart;
-		await broadcastMatchState('match.chartStart', state);
-		await startReadyCheck(interaction, chart, state);
+	const currentPool = getCurrentPool(state);
+
+	if (currentPool.length === 1) {
+		const chart = currentPool[0];
+		await pickChart(chart.csvName, state.currentPickerDiscordId);
+		const updatedState = getMatchState();
+		await broadcastMatchState('match.pick', updatedState);
+		await startReadyCheck(interaction, message, chart.csvName, updatedState, discordUsersMap);
 		return;
 	}
+
+	const pickerDiscordId = state.currentPickerDiscordId;
+	const pickerPlayer = getPlayerByDiscordId(state, pickerDiscordId);
+	const pickerDisplayData = {
+		username: pickerPlayer?.discordUsername ?? 'Unknown',
+		displayName: pickerPlayer?.discordDisplayName ?? pickerPlayer?.displayName ?? 'Unknown Player',
+		id: pickerDiscordId,
+	};
 
 	const pickCol = message.createMessageComponentCollector({
 		componentType: ComponentType.StringSelect,
@@ -109,9 +157,9 @@ async function startPickPhase(interaction, message, state) {
 	state._activeCollector = pickCol;
 
 	pickCol.on('collect', async (i) => {
-		if (i.user.id !== state.currentPicker.id) {
+		if (i.user.id !== pickerDiscordId) {
 			await i.reply({
-				content: `It's not your turn to pick! It's **${state.currentPicker.displayName || state.currentPicker.username}**'s turn.`,
+				content: `It's not your turn to pick! It's **${pickerDisplayData.displayName}**'s turn.`,
 				flags: MessageFlags.Ephemeral,
 			});
 			return;
@@ -119,20 +167,16 @@ async function startPickPhase(interaction, message, state) {
 
 		try {
 			await i.deferUpdate();
-			const picked = state.currentMapPool.find((m) => m.name === i.values[0]) ?? i.values[0];
-			const pickedBy = state.currentPicker;
-			state.currentChart = picked;
+			const csvName = i.values[0];
 
-			// Stop the collector before broadcasting
 			pickCol.stop();
 			state._activeCollector = null;
 
-			await broadcastMatchState('match.pick', state, {
-				pickedByDiscordId: pickedBy.id,
-			});
+			await pickChart(csvName, i.user.id);
+			const updatedState = getMatchState();
 
-			await saveMatchState();
-			await startReadyCheck(interaction, picked, state);
+			await broadcastMatchState('match.pick', updatedState, { pickedByDiscordId: i.user.id });
+			await startReadyCheck(interaction, message, csvName, updatedState, discordUsersMap);
 		}
 		catch (error) {
 			console.error('Error in pick phase:', error);
@@ -146,20 +190,15 @@ async function startPickPhase(interaction, message, state) {
 	pickCol.on('end', async (collected, reason) => {
 		if (reason === 'time' && state._activeCollector === pickCol) {
 			state._activeCollector = null;
-			console.log('Pick phase timed out');
-
-			// Notify that the pick timed out
 			await interaction.followUp({
 				content: '⚠️ Pick phase timed out. A referee needs to restart the match.',
 				flags: MessageFlags.Ephemeral,
 			});
-
-			// Don't clear state automatically - let referee decide
 		}
 	});
 }
 
-async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber }) {
+async function startBanPhase(interaction, { player1, player2, player1Name, player2Name, mapPool, bestOf, tier, roundName, matchNumber }, discordUsersMap) {
 	const randomPlayer = Math.random() >= 0.5 ? player1 : player2;
 	const otherPlayer = randomPlayer !== player1 ? player1 : player2;
 
@@ -179,23 +218,35 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 		await j.deferUpdate();
 
 		const firstBanner = j.customId === 'first' ? randomPlayer : otherPlayer;
-		const secondBanner = firstBanner === randomPlayer ? otherPlayer : randomPlayer;
-		const numBans = mapPool.length - 1;
-		const banOrder = Array.from({ length: numBans }, (_, i) => (i % 2 === 0 ? firstBanner : secondBanner));
-		let currentMapPool = [...mapPool];
-		let banTurn = 0;
 
-		const state = await initMatchState(player1, player2, firstBanner, bestOf, tier, currentMapPool, interaction, roundName, matchNumber);
-		state.bannedCharts = [];
-		state.currentBanner = banOrder[0];
+		const state = await initMatchState({
+			player1,
+			player2,
+			player1Name,
+			player2Name,
+			firstBanner,
+			bestOf,
+			tier,
+			mapPool,
+			interaction,
+			round: roundName,
+			matchNumber,
+		});
+
+		state._interaction = interaction;
+		discordUsersMap.set(player1.id, player1);
+		discordUsersMap.set(player2.id, player2);
 
 		await broadcastMatchState('match.start', state);
 		await broadcastMatchState('match.banOrderDecided', state, {
 			firstBannerDiscordId: firstBanner.id,
 		});
 
+		const currentPool = getCurrentPool(state);
+		const currentBannerDiscordUser = discordUsersMap.get(state.banPhase.currentBannerDiscordId);
+
 		await interaction.editReply({
-			components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
+			components: [getBanContainer(currentBannerDiscordUser, currentPool, getScore(state), getPlayerNames(state), bestOf)],
 			flags: MessageFlags.IsComponentsV2,
 		});
 
@@ -207,10 +258,11 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 			time: 300000,
 		});
 
+		state._activeCollector = banSelectCol;
+
 		banSelectCol.on('end', async (collected, reason) => {
 			if (reason === 'time' && state._activeCollector === banSelectCol) {
 				state._activeCollector = null;
-				console.log('Ban phase timed out');
 				await interaction.followUp({
 					content: '⚠️ Ban phase timed out. A referee needs to restart the match.',
 					flags: MessageFlags.Ephemeral,
@@ -219,7 +271,8 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 		});
 
 		banSelectCol.on('collect', async (k) => {
-			if (k.user.id !== banOrder[banTurn].id) {
+			const currentState = getMatchState();
+			if (k.user.id !== currentState.banPhase.currentBannerDiscordId) {
 				await k.reply({ content: 'It\'s not your turn to ban!', flags: MessageFlags.Ephemeral });
 				return;
 			}
@@ -227,45 +280,63 @@ async function startBanPhase(interaction, { player1, player2, mapPool, bestOf, t
 			await k.deferUpdate();
 
 			const bannedName = k.values[0];
-			const banner = banOrder[banTurn];
-			state.bannedCharts = [...(state.bannedCharts ?? []), { name: bannedName, bannedBy: banner.id }];
+			await banChart(bannedName, k.user.id);
+			const updatedState = getMatchState();
+			const updatedPool = getCurrentPool(updatedState);
 
-			currentMapPool = currentMapPool.filter((m) => m.name !== bannedName);
-			banTurn++;
-
-			state.currentMapPool = [...currentMapPool];
-			state.currentBanner = banOrder[banTurn] ?? null;
-
-			if (currentMapPool.length <= 1) {
+			if (updatedPool.length <= 1) {
 				banSelectCol.stop();
-				await saveMatchState();
-				await broadcastMatchState('match.ban', state, {
+				state._activeCollector = null;
+
+				await broadcastMatchState('match.ban', updatedState, {
 					bannedChart: bannedName,
-					bannedByDiscordId: banner.id,
-				});
-				await broadcastMatchState('match.pickPhaseStart', state);
-
-				await interaction.editReply({
-					components: [getPickContainer(firstBanner, currentMapPool, state.score, state.playerNames, bestOf)],
-					flags: MessageFlags.IsComponentsV2,
+					bannedByDiscordId: k.user.id,
 				});
 
-				const pickMessage = await interaction.fetchReply();
-				startPickPhase(interaction, pickMessage, state);
+				const firstChart = updatedPool[0];
+
+				// Set up the chart but DON'T set progressLevel to 'playing' yet
+				await pickChart(firstChart.csvName, k.user.id);
+				const updatedStateAfterPick = getMatchState();
+
+				// CRITICAL: Set to 'ready-check', NOT 'playing'
+				updatedStateAfterPick.progressLevel = 'ready-check';
+
+				if (!updatedStateAfterPick.playedCharts) {
+					updatedStateAfterPick.playedCharts = [];
+				}
+
+				await saveMatchState();
+
+				await broadcastMatchState('match.firstChartDetermined', updatedStateAfterPick, {
+					chart: firstChart.csvName,
+				});
+
+				const message = await interaction.fetchReply();
+				await startReadyCheck(interaction, message, firstChart.csvName, updatedStateAfterPick, discordUsersMap);
 				return;
 			}
 
-			await broadcastMatchState('match.ban', state, {
+			await broadcastMatchState('match.ban', updatedState, {
 				bannedChart: bannedName,
-				bannedByDiscordId: banner.id,
+				bannedByDiscordId: k.user.id,
 			});
 
+			const nextBannerDiscordUser = discordUsersMap.get(updatedState.banPhase.currentBannerDiscordId);
 			await interaction.editReply({
-				components: [getBanContainer(banOrder[banTurn], currentMapPool, state.score, state.playerNames, bestOf)],
+				components: [getBanContainer(nextBannerDiscordUser, updatedPool, getScore(updatedState), getPlayerNames(updatedState), bestOf)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 		});
 	});
 }
 
-module.exports = { startPickPhase, startBanPhase };
+module.exports = {
+	startPickPhase,
+	startBanPhase,
+	startReadyCheck,
+	getCurrentPool,
+	getScore,
+	getPlayerNames,
+	getPlayerByDiscordId,
+};

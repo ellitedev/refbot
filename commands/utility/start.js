@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, MessageFlags, ComponentType } = require('discord.js');
-const { players, getMatchState } = require('../../state/match.js');
+const { getMatchState } = require('../../state/match.js');
 const MatchModel = require('../../models/Match.js');
 const { getMatchPool, getGeneratedPools } = require('../../state/generatedPools.js');
 const { ROUNDS, getRound } = require('../../state/rounds.js');
@@ -12,6 +12,8 @@ const {
 const { startBanPhase } = require('../../util/matchFlow.js');
 const { requireReferee } = require('../../util/requireReferee.js');
 const { broadcast } = require('../../state/ws.js');
+
+const players = ['Player 1', 'Player 2'];
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -45,41 +47,29 @@ module.exports = {
 
 		if (focused.name === 'match') {
 			const roundName = interaction.options.getString('round');
-			console.log('Autocomplete - Round name from options:', roundName);
-
 			const round = getRound(roundName);
-			console.log('Autocomplete - Round object:', round);
 
 			if (!round || !event) {
-				console.log('Autocomplete - No round or event found');
 				await interaction.respond([]);
 				return;
 			}
 
 			const pools = getGeneratedPools();
-			console.log('Autocomplete - Generated pools:', pools ? 'Found' : 'Not found');
-
 			const bracket = pools?.find((b) => b.name === round.bracket);
-			console.log('Autocomplete - Bracket found:', bracket?.name);
-
 			const roundData = bracket?.rounds.find((r) => r.name === round.round);
-			console.log('Autocomplete - Round data:', roundData ? `Found with ${roundData.matches?.length} matches` : 'Not found');
 
 			if (!roundData || !roundData.matches) {
-				console.log('Autocomplete - No round data or matches');
 				await interaction.respond([]);
 				return;
 			}
 
 			const completedMatches = await MatchModel.find({
-				event: event._id,
-				round: roundName,
+				'meta.eventId': event._id,
+				'meta.round': roundName,
 				status: { $in: ['completed', 'restarted'] },
-			}).select('matchNumber');
+			}).select('meta.matchNumber');
 
-			console.log('Autocomplete - Completed matches:', completedMatches.map(m => m.matchNumber));
-
-			const completedNumbers = new Set(completedMatches.map((m) => m.matchNumber));
+			const completedNumbers = new Set(completedMatches.map((m) => m.meta.matchNumber));
 
 			const options = roundData.matches
 				.map((_, i) => i + 1)
@@ -88,7 +78,6 @@ module.exports = {
 				.slice(0, 25)
 				.map((n) => ({ name: `Match ${n}`, value: String(n) }));
 
-			console.log('Autocomplete - Generated options:', options);
 			await interaction.respond(options);
 			return;
 		}
@@ -111,7 +100,6 @@ module.exports = {
 		const roundName = interaction.options.getString('round');
 		const matchNumberStr = interaction.options.getString('match');
 
-		// Validate match number is a valid number
 		if (!matchNumberStr || isNaN(parseInt(matchNumberStr, 10))) {
 			await interaction.reply({ content: '❌ Invalid match number provided.', flags: MessageFlags.Ephemeral });
 			return;
@@ -125,7 +113,6 @@ module.exports = {
 			return;
 		}
 
-		// Validate match index
 		if (matchNumber < 1) {
 			await interaction.reply({ content: '❌ Match number must be at least 1.', flags: MessageFlags.Ephemeral });
 			return;
@@ -142,6 +129,7 @@ module.exports = {
 			const { bestOf, tier } = round;
 			let player1 = null;
 			let player2 = null;
+			const discordUsersMap = new Map();
 
 			const response = await interaction.reply({
 				components: [getCheckInContainer(players)],
@@ -210,8 +198,21 @@ module.exports = {
 					flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
 				});
 
+				discordUsersMap.set(player1.id, player1);
+				discordUsersMap.set(player2.id, player2);
+
 				broadcast('match.approved', { playerNames: players, round: roundName, matchNumber });
-				await startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber });
+				await startBanPhase(interaction, {
+					player1,
+					player2,
+					player1Name: players[0],
+					player2Name: players[1],
+					mapPool,
+					bestOf,
+					tier,
+					roundName,
+					matchNumber,
+				}, discordUsersMap);
 			});
 		}
 		catch (error) {

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, MessageFlags, ComponentType } = require('discord.js');
-const { players, getMatchState } = require('../../state/match.js');
+const { getMatchState } = require('../../state/match.js');
 const MatchModel = require('../../models/Match.js');
 const { getRound } = require('../../state/rounds.js');
 const { getActiveEvent } = require('../../state/event.js');
@@ -11,6 +11,8 @@ const {
 const { startBanPhase } = require('../../util/matchFlow.js');
 const { requireReferee } = require('../../util/requireReferee.js');
 const { broadcast } = require('../../state/ws.js');
+
+const players = ['Player 1', 'Player 2'];
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -29,20 +31,26 @@ module.exports = {
 
 		const focused = interaction.options.getFocused().toLowerCase();
 
-		const completed = await MatchModel.find({ event: event._id, status: 'completed' })
-			.sort({ completedAt: -1 })
+		const completed = await MatchModel.find({ 'meta.eventId': event._id, status: 'completed' })
+			.sort({ 'meta.completedAt': -1 })
 			.limit(50);
 
 		const filtered = completed
 			.filter((m) => {
-				const label = `${m.round} #${m.matchNumber} — ${m.player1} vs ${m.player2}`;
+				const p1 = m.players?.[0]?.displayName ?? 'P1';
+				const p2 = m.players?.[1]?.displayName ?? 'P2';
+				const label = `${m.meta?.round} #${m.meta?.matchNumber} — ${p1} vs ${p2}`;
 				return label.toLowerCase().includes(focused);
 			})
 			.slice(0, 25)
-			.map((m) => ({
-				name: `${m.round} — Match #${m.matchNumber} (${m.player1} vs ${m.player2})`,
-				value: m._id.toString(),
-			}));
+			.map((m) => {
+				const p1 = m.players?.[0]?.displayName ?? 'P1';
+				const p2 = m.players?.[1]?.displayName ?? 'P2';
+				return {
+					name: `${m.meta?.round} — Match #${m.meta?.matchNumber} (${p1} vs ${p2})`,
+					value: m._id.toString(),
+				};
+			});
 
 		await interaction.respond(filtered);
 	},
@@ -62,27 +70,31 @@ module.exports = {
 		}
 
 		const matchId = interaction.options.getString('match');
-		const oldMatch = await MatchModel.findOne({ _id: matchId, event: event._id, status: 'completed' });
+		const oldMatch = await MatchModel.findOne({ _id: matchId, 'meta.eventId': event._id, status: 'completed' });
 
 		if (!oldMatch) {
 			await interaction.reply({ content: '❌ Match not found or not yet completed.', flags: MessageFlags.Ephemeral });
 			return;
 		}
 
-		const round = getRound(oldMatch.round);
+		const round = getRound(oldMatch.meta.round);
 		if (!round) {
-			await interaction.reply({ content: `❌ Could not find round config for "${oldMatch.round}".`, flags: MessageFlags.Ephemeral });
+			await interaction.reply({ content: `❌ Could not find round config for "${oldMatch.meta.round}".`, flags: MessageFlags.Ephemeral });
 			return;
 		}
 
 		await MatchModel.findByIdAndUpdate(matchId, { status: 'restarted' });
 
 		const { bestOf, tier } = round;
-		const mapPool = [...oldMatch.fullMapPool];
-		const roundName = oldMatch.round;
-		const matchNumber = oldMatch.matchNumber;
+		const mapPool = oldMatch.mappool.map(c => ({ csvName: c.csvName, songId: c.songId }));
+		const roundName = oldMatch.meta.round;
+		const matchNumber = oldMatch.meta.matchNumber;
+		const player1Name = oldMatch.players?.[0]?.displayName ?? players[0];
+		const player2Name = oldMatch.players?.[1]?.displayName ?? players[1];
+
 		let player1 = null;
 		let player2 = null;
+		const discordUsersMap = new Map();
 
 		const response = await interaction.reply({
 			components: [getCheckInContainer(players)],
@@ -143,7 +155,6 @@ module.exports = {
 					components: [getSimpleContainer('Check in terminated.')],
 					flags: MessageFlags.IsComponentsV2,
 				});
-				await MatchModel.findByIdAndUpdate(matchId, { status: 'completed' });
 				return;
 			}
 
@@ -152,8 +163,21 @@ module.exports = {
 				flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
 			});
 
+			discordUsersMap.set(player1.id, player1);
+			discordUsersMap.set(player2.id, player2);
+
 			broadcast('match.approved', { playerNames: players, round: roundName, matchNumber });
-			await startBanPhase(interaction, { player1, player2, mapPool, bestOf, tier, roundName, matchNumber });
+			await startBanPhase(interaction, {
+				player1,
+				player2,
+				player1Name,
+				player2Name,
+				mapPool,
+				bestOf,
+				tier,
+				roundName,
+				matchNumber,
+			}, discordUsersMap);
 		});
 	},
 };

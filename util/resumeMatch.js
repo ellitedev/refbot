@@ -1,130 +1,125 @@
 const { MessageFlags, ComponentType } = require('discord.js');
-const { getMatchPool } = require('../state/generatedPools.js');
-const { getRound } = require('../state/rounds.js');
 const {
 	getPickContainer,
 	getReadyCheckContainer,
 	getCountdownContainer,
 	getSimpleContainer,
 } = require('../ui/matchContainers.js');
-const { startPickPhase } = require('./matchFlow.js');
-const { saveMatchState } = require('../state/match.js');
+const { startPickPhase, getCurrentPool, getScore, getPlayerNames } = require('./matchFlow.js');
+const { restoreMatchState, saveMatchState } = require('../state/match.js');
 
 async function resumeMatch(client, doc, matchStateRef) {
 	try {
 		let channel;
 		try {
-			channel = await client.channels.fetch(doc.channelId);
+			channel = await client.channels.fetch(doc.meta.channelId);
 		}
 		catch {
-			console.error(`[resume] Could not fetch channel ${doc.channelId}`);
+			console.error(`[resume] Could not fetch channel ${doc.meta.channelId}`);
 			return false;
 		}
 
-		const player1 = await client.users.fetch(doc.player1DiscordId);
-		const player2 = await client.users.fetch(doc.player2DiscordId);
-		const currentPicker = await client.users.fetch(doc.currentPickerDiscordId);
+		const discordUsersMap = new Map();
 
-		const round = getRound(doc.round);
-		if (!round) {
-			console.error(`[resume] Unknown round "${doc.round}"`);
-			return false;
+		for (const player of doc.players) {
+			if (player.discordId) {
+				try {
+					const user = await client.users.fetch(player.discordId);
+					discordUsersMap.set(player.discordId, user);
+				}
+				catch {
+					console.error(`[resume] Could not fetch discord user ${player.discordId}`);
+				}
+			}
 		}
 
-		const fullMapPool = getMatchPool(round.bracket, round.round, doc.matchNumber - 1);
+		const state = await restoreMatchState(doc);
 
-		if (!fullMapPool || fullMapPool.length === 0) {
-			console.error('[resume] Full map pool is empty — pools may not have been generated yet.');
-			await channel.send({
-				components: [getSimpleContainer('⚠️ Could not auto-resume: map pool is missing. Please run `/generate` and then `/start` again.')],
-				flags: MessageFlags.IsComponentsV2,
-			});
+		Object.assign(matchStateRef, state);
+
+		const fakeInteraction = makeFakeInteraction(null, channel);
+		matchStateRef.interaction = fakeInteraction;
+		matchStateRef._discordUsersMap = discordUsersMap;
+
+		const currentPool = getCurrentPool(state);
+
+		if (currentPool.length === 0) {
+			console.error('[resume] Current pool resolved to 0 charts — match may already be complete.');
 			return false;
 		}
-
-		const playedNames = new Set(doc.playedCharts.map((c) => (typeof c === 'string' ? c : c.name)));
-		const currentMapPool = fullMapPool.filter((m) => !playedNames.has(m.name));
-
-		if (currentMapPool.length === 0) {
-			console.error('[resume] Current map pool resolved to 0 maps — match may already be complete.');
-			return false;
-		}
-
-		Object.assign(matchStateRef, {
-			_id: doc._id,
-			player1,
-			player2,
-			playerNames: [doc.player1, doc.player2],
-			fullMapPool,
-			playedCharts: doc.playedCharts,
-			currentMapPool,
-			score: doc.score,
-			bestOf: doc.bestOf,
-			tier: doc.tier,
-			winsNeeded: Math.ceil(doc.bestOf / 2),
-			currentPicker,
-			currentChart: doc.currentChart,
-		});
 
 		let resumeMsg;
 
-		if (doc.currentChart) {
-			let p1Ready = false;
-			let p2Ready = false;
+		if (state.currentChart) {
+			const entry = state.mappool.find(c => c.csvName === state.currentChart);
+			const chart = entry ?? { csvName: state.currentChart, displayName: state.currentChart };
+			const coverUrl = entry?.thumbnailUrl ?? entry?.cover ?? null;
+
+			const p1DiscordUser = discordUsersMap.get(state.players[0].discordId);
+			const p2DiscordUser = discordUsersMap.get(state.players[1].discordId);
 
 			resumeMsg = await channel.send({
-				components: [getReadyCheckContainer(doc.currentChart, player1, player2, p1Ready, p2Ready, true)],
+				components: [getReadyCheckContainer(chart, p1DiscordUser, p2DiscordUser, false, false, true)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 
-			const fakeInteraction = makeFakeInteraction(resumeMsg, channel);
-			matchStateRef.interaction = fakeInteraction;
+			const updatedFakeInteraction = makeFakeInteraction(resumeMsg, channel);
+			matchStateRef.interaction = updatedFakeInteraction;
+			state.interaction = updatedFakeInteraction;
 
 			const readyCol = resumeMsg.createMessageComponentCollector({
 				componentType: ComponentType.Button,
-				filter: (j) => j.user.id === player1.id || j.user.id === player2.id,
+				filter: (j) => state.players.some(p => p.discordId === j.user.id) && j.customId === 'ready',
 			});
 
+			const readied = new Set();
+
 			readyCol.on('collect', async (j) => {
-				if (j.user.id === player1.id && !p1Ready) { p1Ready = true; }
-				else if (j.user.id === player2.id && !p2Ready) { p2Ready = true; }
-				else {
+				if (readied.has(j.user.id)) {
 					await j.reply({ content: 'You\'re already ready!', flags: MessageFlags.Ephemeral });
 					return;
 				}
 
+				readied.add(j.user.id);
 				await j.deferUpdate();
+
+				const p1Ready = readied.has(state.players[0].discordId);
+				const p2Ready = readied.has(state.players[1].discordId);
 
 				if (p1Ready && p2Ready) {
 					readyCol.stop();
 					await resumeMsg.edit({
-						components: [getCountdownContainer(doc.currentChart)],
+						components: [getCountdownContainer(chart, coverUrl)],
 						flags: MessageFlags.IsComponentsV2,
 					});
 				}
 				else {
-					const unready = !p1Ready ? player1 : player2;
+					const unready = !p1Ready ? p1DiscordUser : p2DiscordUser;
 					await resumeMsg.edit({
-						components: [getReadyCheckContainer(doc.currentChart, player1, player2, p1Ready, p2Ready, false, unready)],
+						components: [getReadyCheckContainer(chart, p1DiscordUser, p2DiscordUser, p1Ready, p2Ready, false, unready, coverUrl)],
 						flags: MessageFlags.IsComponentsV2,
 					});
 				}
 			});
 		}
 		else {
+			const pickerStatePlayer = state.players.find(p => p.discordId === state.currentPickerDiscordId);
+			const pickerDiscordUser = discordUsersMap.get(state.currentPickerDiscordId) ?? { username: pickerStatePlayer?.displayName ?? "?" };
+
 			resumeMsg = await channel.send({
-				components: [getPickContainer(currentPicker, currentMapPool, doc.score, [doc.player1, doc.player2], doc.bestOf)],
+				components: [getPickContainer(pickerDiscordUser, currentPool, getScore(state), getPlayerNames(state), state.meta.bestOf)],
 				flags: MessageFlags.IsComponentsV2,
 			});
 
-			const fakeInteraction = makeFakeInteraction(resumeMsg, channel);
-			matchStateRef.interaction = fakeInteraction;
+			const updatedFakeInteraction = makeFakeInteraction(resumeMsg, channel);
+			matchStateRef.interaction = updatedFakeInteraction;
+			state.interaction = updatedFakeInteraction;
 			await saveMatchState();
 
-			startPickPhase(fakeInteraction, resumeMsg, matchStateRef);
+			startPickPhase(updatedFakeInteraction, resumeMsg, state, discordUsersMap);
 		}
 
-		console.log(`[resume] Match resumed in #${channel.name ?? doc.channelId}`);
+		console.log(`[resume] Match resumed in #${channel.name ?? doc.meta.channelId}`);
 		return true;
 	}
 	catch (err) {
@@ -135,7 +130,7 @@ async function resumeMatch(client, doc, matchStateRef) {
 
 function makeFakeInteraction(message, channel) {
 	return {
-		editReply: (options) => message.edit(options),
+		editReply: (options) => message?.edit(options),
 		fetchReply: () => Promise.resolve(message),
 		followUp: (options) => channel.send(options),
 		guild: channel.guild,

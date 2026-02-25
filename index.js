@@ -14,7 +14,7 @@ const { connectDB } = require('./state/db.js');
 const { loadActiveEvent, getActiveEvent } = require('./state/event.js');
 const { loadMapPoolFromDB } = require('./state/mapPool.js');
 const { loadGeneratedPoolsFromDB } = require('./state/generatedPools.js');
-const { loadInProgressMatch, getMatchStateRef } = require('./state/match.js');
+const { loadInProgressMatch, getMatchState } = require('./state/match.js');
 const { resumeMatch } = require('./util/resumeMatch.js');
 const { startWebSocketServer } = require('./state/ws.js');
 const { startHttpServer } = require('./state/http.js');
@@ -37,9 +37,8 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 		const inProgress = await loadInProgressMatch();
 		if (inProgress) {
-			console.log(`⚠️  Found in-progress match (${inProgress.round} #${inProgress.matchNumber}) — attempting auto-resume...`);
-			const stateRef = getMatchStateRef();
-			const resumed = await resumeMatch(readyClient, inProgress, stateRef);
+			console.log(`⚠️  Found in-progress match (${inProgress.meta.round} #${inProgress.meta.matchNumber}) — attempting auto-resume...`);
+			const resumed = await resumeMatch(readyClient, inProgress, getMatchState() ?? {});
 			if (!resumed) {
 				console.error('[resume] Auto-resume failed. A referee may need to intervene manually.');
 			}

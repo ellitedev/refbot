@@ -29,7 +29,6 @@ module.exports = {
 
 		let message = '**Force Clean Results:**\n\n';
 
-		// Clear in-memory state
 		if (currentMatch) {
 			resetMatchState();
 			message += '✅ Cleared match state from memory\n';
@@ -38,15 +37,14 @@ module.exports = {
 			message += 'ℹ️ No match state found in memory\n';
 		}
 
-		// Also check for any stuck in-progress matches in database
-		const stuckMatches = await MatchModel.find({
-			status: 'in_progress',
-		}).limit(5);
+		const stuckMatches = await MatchModel.find({ status: 'in_progress' }).limit(5);
 
 		if (stuckMatches.length > 0) {
 			message += `\n⚠️ Found ${stuckMatches.length} stuck match(es) in database:\n`;
 			for (const match of stuckMatches) {
-				message += `- ${match.round} #${match.matchNumber} (${match.player1} vs ${match.player2})\n`;
+				const p1 = match.players?.[0]?.displayName ?? 'P1';
+				const p2 = match.players?.[1]?.displayName ?? 'P2';
+				message += `- ${match.meta?.round} #${match.meta?.matchNumber} (${p1} vs ${p2})\n`;
 			}
 			message += '\nUse `/clean` to clean up database matches if needed.';
 		}

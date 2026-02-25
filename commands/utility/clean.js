@@ -9,9 +9,13 @@ const { requireReferee } = require('../../util/requireReferee.js');
 const accentColor = 0x40ffa0;
 
 function getCleanContainer(stuckMatches) {
-	const lines = stuckMatches.map((m, i) =>
-		`**${i + 1}.** ${m.round} — Match #${m.matchNumber} *(${m.status})* | Score: ${m.score[0]}-${m.score[1]} | Started <t:${Math.floor(new Date(m.startedAt).getTime() / 1000)}:R>`,
-	).join('\n');
+	const lines = stuckMatches.map((m, i) => {
+		const p1 = m.players?.[0]?.displayName ?? 'P1';
+		const p2 = m.players?.[1]?.displayName ?? 'P2';
+		const score0 = m.players?.[0]?.points ?? 0;
+		const score1 = m.players?.[1]?.points ?? 0;
+		return `**${i + 1}.** ${m.meta?.round} — Match #${m.meta?.matchNumber} *(${m.status})* | ${p1} ${score0}-${score1} ${p2} | Started <t:${Math.floor(new Date(m.meta?.startedAt).getTime() / 1000)}:R>`;
+	}).join('\n');
 
 	return new ContainerBuilder()
 		.setAccentColor(accentColor)
@@ -43,9 +47,7 @@ module.exports = {
 		const activeState = getMatchState();
 		const activeId = activeState?._id?.toString();
 
-		// Check if there's a match in memory but not in database
 		if (activeState && !activeId) {
-			// This is a rare case - match in memory but not in DB
 			await interaction.reply({
 				content: '⚠️ Found a match in memory but not in database. Use `/forceclean` to clear the memory state.',
 				flags: MessageFlags.Ephemeral,
@@ -54,9 +56,9 @@ module.exports = {
 		}
 
 		const stuckMatches = await MatchModel.find({
-			event: event._id,
+			'meta.eventId': event._id,
 			status: { $in: ['in_progress', 'restarted'] },
-		}).sort({ startedAt: 1 });
+		}).sort({ 'meta.startedAt': 1 });
 
 		const stuck = stuckMatches.filter((m) => m._id.toString() !== activeId);
 
@@ -81,7 +83,7 @@ module.exports = {
 		if (conf.customId === 'clean_complete') {
 			await MatchModel.updateMany(
 				{ _id: { $in: stuckIds } },
-				{ status: 'completed', completedAt: new Date() },
+				{ status: 'completed', 'meta.completedAt': new Date() },
 			);
 			await conf.update({
 				components: [getSimpleContainer(`✅ Marked ${stuck.length} match(es) as completed.`)],
