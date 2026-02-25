@@ -72,9 +72,10 @@ async function buildStateSnapshot() {
 
 function startHttpServer() {
 	const port = parseInt(process.env.HTTP_PORT ?? '8081');
-	const overlayPath = path.join(__dirname, '..', 'overlay', 'index.html');
+	const overlayDir = path.join(__dirname, '..', 'overlay');
 
 	server = http.createServer(async (req, res) => {
+		// Handle /state endpoint
 		if (req.method === 'GET' && req.url === '/state') {
 			try {
 				const snapshot = await buildStateSnapshot();
@@ -92,31 +93,90 @@ function startHttpServer() {
 			return;
 		}
 
-		if (req.method !== 'GET' || req.url !== '/') {
-			res.writeHead(404);
-			res.end('Not found');
-			return;
-		}
+		// Handle file requests from /overlay
+		if (req.method === 'GET') {
+			// Normalize the URL to prevent directory traversal attacks
+			let filePath;
+			if (req.url === '/') {
+				filePath = path.join(overlayDir, 'index.html');
+			}
+			else {
+				// Remove leading slash and join with overlay directory
+				const relativePath = req.url.slice(1);
+				filePath = path.join(overlayDir, relativePath);
+			}
 
-		fs.readFile(overlayPath, 'utf8', (err, data) => {
-			if (err) {
-				res.writeHead(500);
-				res.end('Could not read overlay file');
-				console.error('[http] Failed to read overlay:', err);
+			// Security check: ensure the resolved path is still within overlay directory
+			const resolvedPath = path.resolve(filePath);
+			if (!resolvedPath.startsWith(path.resolve(overlayDir))) {
+				res.writeHead(403);
+				res.end('Access denied');
 				return;
 			}
 
-			const wsPort = process.env.WS_PORT ?? '8080';
-			const httpPort = process.env.HTTP_PORT ?? '8081';
-			const injected = data.replace('</head>', `<script>window.WS_PORT = ${wsPort}; window.HTTP_PORT = ${httpPort};</script>\n</head>`);
+			// Read and serve the file
+			fs.readFile(resolvedPath, (err, data) => {
+				if (err) {
+					if (err.code === 'ENOENT') {
+						res.writeHead(404);
+						res.end('File not found');
+					}
+					else {
+						res.writeHead(500);
+						res.end('Could not read file');
+						console.error('[http] Failed to read file:', err);
+					}
+					return;
+				}
 
-			res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-			res.end(injected);
-		});
+				// Determine content type based on file extension
+				const ext = path.extname(resolvedPath).toLowerCase();
+				const contentType = {
+					'.html': 'text/html; charset=utf-8',
+					'.htm': 'text/html; charset=utf-8',
+					'.css': 'text/css',
+					'.js': 'application/javascript',
+					'.json': 'application/json',
+					'.png': 'image/png',
+					'.jpg': 'image/jpeg',
+					'.jpeg': 'image/jpeg',
+					'.gif': 'image/gif',
+					'.svg': 'image/svg+xml',
+					'.ico': 'image/x-icon',
+					'.txt': 'text/plain',
+					'.woff': 'font/woff',
+					'.woff2': 'font/woff2',
+					'.ttf': 'font/ttf',
+					'.eot': 'application/vnd.ms-fontobject',
+				}[ext] || 'application/octet-stream';
+
+				// Special handling for HTML files to inject ports
+				if (ext === '.html' && req.url === '/') {
+					// Only inject into the main index.html
+					const htmlContent = data.toString('utf8');
+					const wsPort = process.env.WS_PORT ?? '8080';
+					const httpPort = process.env.HTTP_PORT ?? '8081';
+					const injected = htmlContent.replace('</head>', `<script>window.WS_PORT = ${wsPort}; window.HTTP_PORT = ${httpPort};</script>\n</head>`);
+
+					res.writeHead(200, { 'Content-Type': contentType });
+					res.end(injected);
+				}
+				else {
+					res.writeHead(200, { 'Content-Type': contentType });
+					res.end(data);
+				}
+			});
+			return;
+		}
+
+		// Handle unsupported methods
+		res.writeHead(405);
+		res.end('Method not allowed');
 	});
 
 	server.listen(port, () => {
 		console.log(`[http] Overlay server listening on http://localhost:${port}`);
+		console.log(`[http] Serving files from: ${overlayDir}`);
 	});
 
 	server.on('error', (err) => {
