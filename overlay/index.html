@@ -13,16 +13,32 @@
   <style>
     :root {
       --bg: #212629;
-      --surface: #1b1f26;
-      --surface2: #282c35;
-      --accent: #fb1357;
-      --accent2: #25a7fb;
+      --bg2: #0f1313;
+      --surface: #121518;
+      --surface2: #1b1f26;
+      --surface3: #282c35;
+      --accent: #25a7fb;
+      --accent-dim: rgba(37, 167, 251, 0.15);
+      --accent-border: rgba(37, 167, 251, 0.3);
+      --accent2: #fb1357;
+      --accent2-dim: rgba(251, 19, 87, 0.15);
       --win: #3dfb84;
+      --win-border: rgba(0, 229, 160, 0.3);
+      --win-bg: rgba(0, 229, 160, 0.15);
+      --win-dim: rgba(0, 229, 160, 0.15);
+      --played-bg: rgba(0, 229, 160, 0.15);
+      --played-border: rgba(0, 229, 160, 0.3);
       --lose: #fb1357;
+      --lose-bg: rgba(251, 19, 87, 0.15);
+      --lose-border: rgba(251, 19, 87, 0.3);
+      --banned-bg: rgba(255, 64, 129, 0.15);
+      --banned-border: rgba(255, 64, 129, 0.3);
       --text: #fff;
       --muted: #ffffff80;
       --border: rgba(255, 255, 255, 0.12);
       --glow: rgba(255, 255, 255, 0.35);
+      --lose-border: rgba(255, 64, 129, 0.25);
+      --lose-bg: rgba(255, 64, 129, 0.15);
     }
 
     * {
@@ -32,7 +48,7 @@
     }
 
     body {
-      background: var(--bg);
+      background: var(--bg2);
       color: var(--text);
       font-family: 'Cascadia Code', sans-serif;
       min-height: 100vh;
@@ -49,8 +65,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid var(--border);
+      border: 1px solid var(--border);
       padding-bottom: 1rem;
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 0.5rem .5rem;
     }
 
     #ws-status {
@@ -61,6 +80,7 @@
       align-items: center;
       gap: 0.4rem;
       color: var(--muted);
+      padding-right: .3rem;
     }
 
     #ws-dot {
@@ -73,12 +93,12 @@
 
     #ws-dot.connected {
       background: var(--win);
-      box-shadow: 0 0 8px var(--win);
+      box-shadow: 0 0 8px var(--win-bg);
     }
 
     #ws-dot.error {
       background: var(--lose);
-      box-shadow: 0 0 8px var(--lose);
+      box-shadow: 0 0 8px var(--lose-bg);
     }
 
     .ws-config {
@@ -105,9 +125,9 @@
     }
 
     button {
-      background: var(--accent2);
-      border: none;
-      color: #fff;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      color: var(--text);
       padding: 0.4rem 1rem;
       border-radius: 6px;
       font-family: 'Cascadia Code', monospace;
@@ -115,12 +135,13 @@
       font-weight: 700;
       letter-spacing: 0.08em;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
+      transition: opacity 0.2s, transform 0.1s, background 0.1s;
     }
 
     button:hover {
       opacity: 0.88;
       transform: translateY(-1px);
+      background: var(--accent);
     }
 
     button:active {
@@ -179,7 +200,6 @@
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(135deg, rgba(124, 77, 255, 0.06) 0%, rgba(224, 64, 251, 0.04) 100%);
       pointer-events: none;
     }
 
@@ -195,7 +215,7 @@
 
     .player-avatar.ready {
       border-color: var(--win);
-      box-shadow: 0 0 14px rgba(0, 229, 160, 0.5);
+      box-shadow: 0 0 14px var(--win-bg);
     }
 
     .player-username {
@@ -292,8 +312,8 @@
     }
 
     .current-chart-card.active {
-      border-color: rgba(224, 64, 251, 0.5);
-      box-shadow: 0 0 24px rgba(224, 64, 251, 0.12);
+      border-color: var(--accent);
+      box-shadow: 0 0 24px var(--accent);
     }
 
     .chart-thumb {
@@ -330,7 +350,7 @@
     }
 
     .chart-difficulty {
-      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      background: var(--surface2);
       border-radius: 6px;
       padding: 0.3rem 0.7rem;
       font-family: 'Cascadia Code', monospace;
@@ -366,7 +386,7 @@
     .map-chip.banned {
       opacity: 0.28;
       filter: grayscale(0.8);
-      border-color: rgba(255, 64, 129, 0.2);
+      border-color: var(--banned-border);
     }
 
     .map-chip.dimmed {
@@ -375,7 +395,7 @@
 
     .map-chip.current {
       border-color: var(--accent);
-      box-shadow: 0 0 12px rgba(224, 64, 251, 0.2);
+      box-shadow: 0 0 12px var(--accent-dim);
     }
 
     .chip-tag {
@@ -392,21 +412,21 @@
     }
 
     .banned-tag {
-      background: rgba(255, 64, 129, 0.25);
-      color: var(--lose);
-      border: 1px solid rgba(255, 64, 129, 0.4);
+      background: var(--banned-bg);
+      color: var(--banned);
+      border: 1px solid var(--banned-border);
     }
 
     .played-tag {
-      background: rgba(0, 229, 160, 0.15);
-      color: var(--win);
-      border: 1px solid rgba(0, 229, 160, 0.3);
+      background: var(--played-bg);
+      color: var(--played);
+      border: 1px solid var(--played-border);
     }
 
     .current-tag {
-      background: rgba(224, 64, 251, 0.2);
+      background: var(--accent-dim);
       color: var(--accent);
-      border: 1px solid rgba(224, 64, 251, 0.4);
+      border: 1px solid var(--accent-border);
     }
 
     .map-chip-thumb {
@@ -465,7 +485,7 @@
       font-size: 0.82rem;
       letter-spacing: 0.02em;
       padding: 0.3rem 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid var(--border);
       animation: slideIn 0.3s ease;
       display: flex;
       gap: 0.6rem;
@@ -503,7 +523,7 @@
     }
 
     .feed-ban {
-      color: var(--lose);
+      color: var(--banned);
     }
 
     .feed-end {
@@ -534,21 +554,21 @@
     }
 
     .phase-bar.banning .phase-bar-icon {
-      background: rgba(255, 64, 129, 0.15);
-      color: var(--lose);
-      border: 1px solid rgba(255, 64, 129, 0.3);
+      background: var(--banned-bg);
+      color: var(--banned);
+      border: 1px solid var(--banned-border);
     }
 
     .phase-bar.picking .phase-bar-icon {
-      background: rgba(224, 64, 251, 0.15);
+      background: var(--accent-dim);
       color: var(--accent);
-      border: 1px solid rgba(224, 64, 251, 0.3);
+      border: 1px solid var(--accent-border);
     }
 
     .phase-bar.playing .phase-bar-icon {
-      background: rgba(0, 229, 160, 0.15);
-      color: var(--win);
-      border: 1px solid rgba(0, 229, 160, 0.3);
+      background: var(--played-bg);
+      color: var(--played);
+      border: 1px solid var(--played-border);
     }
 
     .phase-bar-text {
@@ -580,21 +600,21 @@
     }
 
     .phase-bar.banning .phase-bar-icon {
-      background: rgba(255, 64, 129, 0.15);
-      color: var(--lose);
-      border: 1px solid rgba(255, 64, 129, 0.3);
+      background: var(--banned-bg);
+      color: var(--banned);
+      border: 1px solid var(--banned-border);
     }
 
     .phase-bar.picking .phase-bar-icon {
-      background: rgba(224, 64, 251, 0.15);
+      background: var(--accent-dim);
       color: var(--accent);
-      border: 1px solid rgba(224, 64, 251, 0.3);
+      border: 1px solid var(--accent-border);
     }
 
     .phase-bar.playing .phase-bar-icon {
-      background: rgba(0, 229, 160, 0.15);
-      color: var(--win);
-      border: 1px solid rgba(0, 229, 160, 0.3);
+      background: var(--played-bg);
+      color: var(--played);
+      border: 1px solid var(--played-border);
     }
 
     .phase-bar-text {
@@ -602,7 +622,7 @@
     }
 
     .match-end-banner {
-      background: linear-gradient(135deg, rgba(124, 77, 255, 0.2), rgba(224, 64, 251, 0.2));
+      background: var(--surface);
       border: 1px solid var(--accent);
       border-radius: 14px;
       padding: 1.5rem 2rem;
@@ -636,7 +656,7 @@
       font-family: 'Cascadia Code', monospace;
       font-weight: 900;
       font-size: 2rem;
-      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      background: linear-gradient(180deg, var(--win) 40%, var(--muted) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -682,13 +702,13 @@
     }
 
     .checkin-player.checked {
-      border-color: var(--win);
-      box-shadow: 0 0 12px rgba(0, 229, 160, 0.15);
+      border-color: var(--win-border);
+      box-shadow: 0 0 12px var(--win-dim);
     }
 
     .checkin-player.approved {
-      border-color: var(--accent);
-      box-shadow: 0 0 12px rgba(224, 64, 251, 0.15);
+      border-color: var(--accent-border);
+      box-shadow: 0 0 12px var(--accent-dim);
     }
 
     .checkin-dot {
@@ -702,12 +722,12 @@
 
     .checkin-player.checked .checkin-dot {
       background: var(--win);
-      box-shadow: 0 0 6px var(--win);
+      box-shadow: 0 0 6px var(--win-dim);
     }
 
     .checkin-player.approved .checkin-dot {
       background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
+      box-shadow: 0 0 6px var(--accent-dim);
     }
 
     .checkin-name {
