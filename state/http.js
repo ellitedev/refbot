@@ -1,4 +1,5 @@
 const http = require('node:http');
+const os = require('os');
 const fs = require('node:fs');
 const path = require('node:path');
 const { getMatchState } = require('./match.js');
@@ -60,7 +61,18 @@ function startHttpServer() {
 	});
 
 	server.listen(port, () => {
-		console.log(`[http] HTTP server listening on port ${port}`);
+		console.log(`\n[http] HTTP server listening on port ${port}`);
+		console.log(`Local: http://localhost:${port}`);
+
+		const interfaces = os.networkInterfaces();
+		Object.keys(interfaces).forEach((interfaceName) => {
+			interfaces[interfaceName].forEach((iface) => {
+				if (!iface.internal && iface.family === 'IPv4') {
+					console.log(`Network: http://${iface.address}:${port}`);
+				}
+			});
+		});
+		console.log('');
 	});
 }
 
