@@ -51,7 +51,7 @@ In no order:
 - [x] SpinShare chart metadata + album art
 - [x] Match history and restart support
 - [x] Permission checks, only people with a certain role should be allowed to run certain events and commands, might need a complete re-write.
-- [x] Support for friendly's, outside of tournament play. (This means we need to be able to run concurrent matches)
+- [ ] Support for friendlies, outside of tournament play. (This means we need to be able to run concurrent matches)
 - [ ] start.gg match reporting
 - [ ] fetch event data from start.gg, rather than using brackets.json and hardcoding things
 - [ ] Simulate rolls because it's silly and fun! Should be interactive for the players
