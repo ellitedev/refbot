@@ -35,7 +35,13 @@ async function setGeneratedPools(pools) {
 		{ upsert: true, new: true },
 	);
 
-	generatedPools = pools;
+	generatedPools = serialized.map(bracket => ({
+		name: bracket.name,
+		rounds: bracket.rounds.map(round => ({
+			name: round.name,
+			matches: round.matches.map(match => ({ charts: match.charts })),
+		})),
+	}));
 }
 
 async function loadGeneratedPoolsFromDB() {
